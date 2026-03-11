@@ -1,0 +1,11 @@
+{
+    "name": "student-cash",
+    "version": "1.0.0",
+    "description": "Student Cash - Root",
+    "scripts": {
+        "start": "npx concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+        "start:backend": "cd backend && node server.js",
+        "start:frontend": "cd frontend && npm run dev",
+        "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+    }
+}
