@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Layout = () => {
     const navigate = useNavigate();
     const { user, isGuest, logout } = useAuth();
+    const [deleteMode, setDeleteMode] = useState(false);
 
     const userName = user?.name || "Invitado";
 
@@ -43,12 +44,18 @@ const Layout = () => {
 
             {/* Main Content Area */}
             <main className="flex-1 w-full max-w-6xl mx-auto p-4 md:p-6 pb-24">
-                <Outlet />
+                <Outlet context={{ deleteMode }} />
             </main>
 
-            {/* Help Button */}
-            <button className="fixed bottom-6 right-6 w-12 h-12 bg-slate-800 text-white rounded-full flex items-center justify-center shadow-xl hover:bg-slate-700 transition-transform z-50 hover:scale-105">
-                <span className="font-bold text-lg">?</span>
+            {/* Delete Mode Button */}
+            <button
+                onClick={() => setDeleteMode((prev) => !prev)}
+                className={`fixed bottom-6 right-6 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-transform z-50 hover:scale-105 ${
+                    deleteMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-800 hover:bg-slate-700 text-white'
+                }`}
+                title={deleteMode ? 'Salir de modo eliminar' : 'Modo eliminar movimientos'}
+            >
+                <Trash2 className="w-5 h-5" />
             </button>
         </div>
     );

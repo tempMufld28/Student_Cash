@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://127.0.0.1:5005/api';
 
 const Auth = () => {
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
     const [error, setError] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const navigate = useNavigate();
     const { login, loginAsGuest } = useAuth();
@@ -20,6 +21,7 @@ const Auth = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setIsSubmitting(true);
 
         try {
             const endpoint = isLogin ? '/auth/login' : '/auth/register';
@@ -56,7 +58,10 @@ const Auth = () => {
                 }
             }
         } catch (err) {
-            setError(err.message);
+            console.error('Submit error:', err);
+            setError(err.message === 'Failed to fetch' ? 'No se pudo conectar con el servidor (Revisa que el backend esté corriendo)' : err.message);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -79,8 +84,8 @@ const Auth = () => {
                 <button
                     onClick={() => setIsLogin(true)}
                     className={`flex-1 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${isLogin
-                            ? 'bg-white text-slate-900 shadow-sm'
-                            : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
                         }`}
                 >
                     Iniciar Sesión
@@ -88,8 +93,8 @@ const Auth = () => {
                 <button
                     onClick={() => setIsLogin(false)}
                     className={`flex-1 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${!isLogin
-                            ? 'bg-white text-slate-900 shadow-sm'
-                            : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
                         }`}
                 >
                     Crear Cuenta
@@ -150,9 +155,10 @@ const Auth = () => {
 
                         <button
                             type="submit"
-                            className="w-full bg-[#0a0a0b] hover:bg-slate-800 text-white font-medium py-3 rounded-xl transition-colors mt-2 shadow-md"
+                            disabled={isSubmitting}
+                            className={`w-full text-white font-medium py-3 rounded-xl transition-colors mt-2 shadow-md ${isSubmitting ? 'bg-slate-600 cursor-not-allowed' : 'bg-[#0a0a0b] hover:bg-slate-800'}`}
                         >
-                            {isLogin ? 'Entrar' : 'Crear Cuenta'}
+                            {isSubmitting ? 'Cargando...' : (isLogin ? 'Entrar' : 'Crear Cuenta')}
                         </button>
                     </form>
                 </div>

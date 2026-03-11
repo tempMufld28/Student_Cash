@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
@@ -9,13 +10,36 @@ const CATEGORIES = [
 ];
 
 const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#64748b'];
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://127.0.0.1:5005/api';
+
+const parseAmount = (value) => {
+    if (typeof value === 'number') return value;
+    if (!value) return 0;
+    const clean = String(value).replace(/,/g, '');
+    const num = parseFloat(clean);
+    return Number.isNaN(num) ? 0 : num;
+};
+
+const formatInputAmount = (value) => {
+    const numeric = String(value || '').replace(/[^\d.]/g, '');
+    if (!numeric) return '';
+    const [intPart, decPart] = numeric.split('.');
+    const intNumber = intPart ? parseInt(intPart, 10) : 0;
+    const formattedInt = Number.isNaN(intNumber)
+        ? ''
+        : intNumber.toLocaleString('en-US');
+    if (decPart !== undefined) {
+        return `${formattedInt || '0'}.${decPart.slice(0, 2)}`;
+    }
+    return formattedInt;
+};
 
 const Dashboard = () => {
     const [activeTab, setActiveTab] = useState('resumen');
     const [transactions, setTransactions] = useState([]);
     const [plannedExpenses, setPlannedExpenses] = useState([]);
     const { user, token, isGuest } = useAuth();
+    const { deleteMode } = useOutletContext() || {};
 
     // Load Data
     useEffect(() => {
@@ -41,7 +65,13 @@ const Dashboard = () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const planData = await planRes.json();
-            if (planRes.ok) setPlannedExpenses(planData);
+            if (planRes.ok) {
+                const normalized = planData.map(p => ({
+                    ...p,
+                    modules: p.modules ? JSON.parse(p.modules) : []
+                }));
+                setPlannedExpenses(normalized);
+            }
         } catch (error) {
             console.error('Error fetching data:', error);
         }
@@ -78,8 +108,48 @@ const Dashboard = () => {
             });
             if (res.ok) {
                 const saved = await res.json();
-                setPlannedExpenses([...plannedExpenses, saved]);
+                setPlannedExpenses([...plannedExpenses, { ...saved, modules: saved.modules || [] }]);
             }
+        }
+    };
+
+    const deleteTransaction = async (id) => {
+        if (isGuest) {
+            const updated = transactions.filter(t => t.id !== id);
+            setTransactions(updated);
+            localStorage.setItem('student_cash_transactions', JSON.stringify(updated));
+            return;
+        }
+        try {
+            const res = await fetch(`${API_URL}/transactions/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                setTransactions(transactions.filter(t => t.id !== id));
+            }
+        } catch (error) {
+            console.error('Error deleting transaction', error);
+        }
+    };
+
+    const deletePlanned = async (id) => {
+        if (isGuest) {
+            const updated = plannedExpenses.filter(p => p.id !== id);
+            setPlannedExpenses(updated);
+            localStorage.setItem('student_cash_planned', JSON.stringify(updated));
+            return;
+        }
+        try {
+            const res = await fetch(`${API_URL}/planned-expenses/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                setPlannedExpenses(plannedExpenses.filter(p => p.id !== id));
+            }
+        } catch (error) {
+            console.error('Error deleting planned expense', error);
         }
     };
 
@@ -108,9 +178,19 @@ const Dashboard = () => {
             </div>
 
             {activeTab === 'resumen' ? (
-                <ResumenTab transactions={transactions} onAddTransaction={saveTransaction} />
+                <ResumenTab
+                    transactions={transactions}
+                    onAddTransaction={saveTransaction}
+                    onDeleteTransaction={deleteTransaction}
+                    deleteMode={deleteMode}
+                />
             ) : (
-                <PlanificacionTab plannedExpenses={plannedExpenses} onAddPlanned={savePlanned} />
+                <PlanificacionTab
+                    plannedExpenses={plannedExpenses}
+                    onAddPlanned={savePlanned}
+                    onDeletePlanned={deletePlanned}
+                    deleteMode={deleteMode}
+                />
             )}
         </div>
     );
@@ -118,7 +198,7 @@ const Dashboard = () => {
 
 // --- Subcomponents ---
 
-const ResumenTab = ({ transactions, onAddTransaction }) => {
+const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, deleteMode }) => {
     const [type, setType] = useState('Gasto');
     const [desc, setDesc] = useState('');
     const [amount, setAmount] = useState('');
@@ -128,7 +208,9 @@ const ResumenTab = ({ transactions, onAddTransaction }) => {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!desc || !amount || !date || (type === 'Gasto' && !cat)) return;
-        onAddTransaction({ type, description: desc, amount: parseFloat(amount), category: cat, date });
+        const numericAmount = parseAmount(amount);
+        if (!numericAmount) return;
+        onAddTransaction({ type, description: desc, amount: numericAmount, category: cat, date });
         setDesc('');
         setAmount('');
         setCat('');
@@ -180,7 +262,16 @@ const ResumenTab = ({ transactions, onAddTransaction }) => {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1.5">Monto ($)</label>
-                            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                step="0.01"
+                                value={amount}
+                                onChange={e => setAmount(formatInputAmount(e.target.value))}
+                                placeholder="0.00"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                required
+                            />
                         </div>
                         {type === 'Gasto' && (
                             <div>
@@ -260,9 +351,20 @@ const ResumenTab = ({ transactions, onAddTransaction }) => {
                                     <p className="font-semibold text-sm text-slate-800">{t.description}</p>
                                     <p className="text-xs text-slate-500 mt-0.5">{t.date} • {t.type === 'Gasto' ? t.category : 'Ingreso'}</p>
                                 </div>
-                                <p className={`font-bold ${t.type === 'Gasto' ? 'text-slate-800' : 'text-green-600'}`}>
-                                    {t.type === 'Gasto' ? '-' : '+'}${t.amount.toFixed(2)}
-                                </p>
+                                <div className="flex items-center gap-3">
+                                    {deleteMode && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onDeleteTransaction(t.id)}
+                                            className="text-xs font-semibold text-red-600 hover:text-red-700"
+                                        >
+                                            Quitar
+                                        </button>
+                                    )}
+                                    <p className={`font-bold ${t.type === 'Gasto' ? 'text-slate-800' : 'text-green-600'}`}>
+                                        {t.type === 'Gasto' ? '-' : '+'}${t.amount.toFixed(2)}
+                                    </p>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -274,18 +376,55 @@ const ResumenTab = ({ transactions, onAddTransaction }) => {
     );
 };
 
-const PlanificacionTab = ({ plannedExpenses, onAddPlanned }) => {
+const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, deleteMode }) => {
     const [desc, setDesc] = useState('');
-    const [amount, setAmount] = useState('');
+    const [baseAmount, setBaseAmount] = useState('');
+    const [modules, setModules] = useState([]);
     const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [isAdding, setIsAdding] = useState(false);
 
+    const handleAddModule = () => {
+        setModules((prev) => [...prev, { id: Date.now(), label: '', amount: '' }]);
+    };
+
+    const handleModuleChange = (id, field, value) => {
+        setModules((prev) =>
+            prev.map((m) =>
+                m.id === id
+                    ? {
+                        ...m,
+                        [field]: field === 'amount' ? formatInputAmount(value) : value
+                    }
+                    : m
+            )
+        );
+    };
+
+    const handleRemoveModule = (id) => {
+        setModules((prev) => prev.filter((m) => m.id !== id));
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!desc || !amount || !date) return;
-        onAddPlanned({ description: desc, amount: parseFloat(amount), date });
+        const numericBase = parseAmount(baseAmount);
+        const numericModules = modules
+            .map((m) => ({ ...m, amount: parseAmount(m.amount) }))
+            .filter((m) => m.label && m.amount > 0);
+
+        if (!desc || (!numericBase && numericModules.length === 0) || !date) return;
+
+        const extrasTotal = numericModules.reduce((acc, curr) => acc + curr.amount, 0);
+        const total = numericBase + extrasTotal;
+
+        onAddPlanned({
+            description: desc,
+            amount: total,
+            date,
+            modules: numericModules,
+        });
         setDesc('');
-        setAmount('');
+        setBaseAmount('');
+        setModules([]);
         setIsAdding(false);
     };
 
@@ -309,12 +448,68 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned }) => {
             {isAdding && (
                 <form onSubmit={handleSubmit} className="mb-8 p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                     <div className="sm:col-span-2">
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
-                        <input type="text" value={desc} onChange={e => setDesc(e.target.value)} required className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Descripción principal</label>
+                        <input
+                            type="text"
+                            value={desc}
+                            onChange={e => setDesc(e.target.value)}
+                            required
+                            className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Monto ($)</label>
-                        <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Monto principal ($)</label>
+                        <input
+                            type="text"
+                            inputMode="decimal"
+                            step="0.01"
+                            value={baseAmount}
+                            onChange={e => setBaseAmount(formatInputAmount(e.target.value))}
+                            className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="0.00"
+                        />
+                    </div>
+                    <div className="sm:col-span-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="block text-xs font-medium text-slate-600">Módulos de gasto extra</label>
+                            <button
+                                type="button"
+                                onClick={handleAddModule}
+                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                            >
+                                + Agregar módulo
+                            </button>
+                        </div>
+                        {modules.length > 0 && (
+                            <div className="space-y-2">
+                                {modules.map((m) => (
+                                    <div key={m.id} className="grid grid-cols-5 gap-2 items-center">
+                                        <input
+                                            type="text"
+                                            value={m.label}
+                                            onChange={(e) => handleModuleChange(m.id, 'label', e.target.value)}
+                                            placeholder="Ej: Transporte"
+                                            className="col-span-3 bg-white border border-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={m.amount}
+                                            onChange={(e) => handleModuleChange(m.id, 'amount', e.target.value)}
+                                            placeholder="0.00"
+                                            className="col-span-1 bg-white border border-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveModule(m.id)}
+                                            className="text-[11px] text-red-500 hover:text-red-600 font-semibold"
+                                        >
+                                            Quitar
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium p-2.5 rounded-lg transition-colors text-sm">
                         Guardar
@@ -329,8 +524,28 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned }) => {
                             <div>
                                 <p className="font-semibold text-sm text-slate-800">{p.description}</p>
                                 <p className="text-xs text-slate-500 mt-0.5 font-medium">{p.date}</p>
+                                {p.modules && p.modules.length > 0 && (
+                                    <div className="mt-1 space-y-0.5">
+                                        {p.modules.map((m, idx) => (
+                                            <p key={idx} className="text-[11px] text-slate-500">
+                                                - {m.label}: ${m.amount.toFixed(2)}
+                                            </p>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <p className="font-bold text-slate-800">${p.amount.toFixed(2)}</p>
+                            <div className="flex items-center gap-3">
+                                {deleteMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onDeletePlanned(p.id)}
+                                        className="text-xs font-semibold text-red-600 hover:text-red-700"
+                                    >
+                                        Quitar
+                                    </button>
+                                )}
+                                <p className="font-bold text-slate-800">${p.amount.toFixed(2)}</p>
+                            </div>
                         </div>
                     ))}
                 </div>
