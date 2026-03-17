@@ -24,7 +24,9 @@ async function getDb() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             email TEXT UNIQUE,
-            password TEXT
+            password TEXT,
+            gender TEXT,
+            avatar TEXT
         )`);
 
         db.run(`CREATE TABLE IF NOT EXISTS transactions (
@@ -45,13 +47,46 @@ async function getDb() {
             amount REAL,
             date TEXT,
             modules TEXT,
+            deadline_date TEXT,
+            event_date TEXT,
+            collaborators TEXT,
             FOREIGN KEY (userId) REFERENCES users (id)
         )`);
 
-        // Intentar agregar columna modules si la tabla ya existía sin ella
+        // Intentar agregar columnas nuevas si la tabla ya existía sin ellas
         db.run('ALTER TABLE planned_expenses ADD COLUMN modules TEXT', (err) => {
           if (err && !err.message.includes('duplicate column')) {
             console.error('Error adding modules column to planned_expenses:', err.message);
+          }
+        });
+
+        db.run('ALTER TABLE planned_expenses ADD COLUMN deadline_date TEXT', (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            console.error('Error adding deadline_date column to planned_expenses:', err.message);
+          }
+        });
+
+        db.run('ALTER TABLE planned_expenses ADD COLUMN event_date TEXT', (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            console.error('Error adding event_date column to planned_expenses:', err.message);
+          }
+        });
+
+        db.run('ALTER TABLE planned_expenses ADD COLUMN collaborators TEXT', (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            console.error('Error adding collaborators column to planned_expenses:', err.message);
+          }
+        });
+
+        db.run('ALTER TABLE users ADD COLUMN gender TEXT', (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            console.error('Error adding gender column to users:', err.message);
+          }
+        });
+
+        db.run('ALTER TABLE users ADD COLUMN avatar TEXT', (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            console.error('Error adding avatar column to users:', err.message);
           }
         });
 

@@ -4,6 +4,6 @@
 
 @layer base {
   body {
-    @apply bg-finance-bg text-slate-800 font-sans antialiased;
+    @apply bg-finance-bg text-finance-text font-sans antialiased;
   }
 }

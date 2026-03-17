@@ -52,8 +52,16 @@ export const AuthProvider = ({ children }) => {
         setIsGuest(false);
     };
 
+    const updateUser = (updatedUserData) => {
+        const merged = { ...user, ...updatedUserData };
+        setUser(merged);
+        if (!isGuest) {
+            localStorage.setItem('student_cash_user', JSON.stringify(merged));
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, token, isGuest, isLoading, login, loginAsGuest, logout }}>
+        <AuthContext.Provider value={{ user, token, isGuest, isLoading, login, loginAsGuest, logout, updateUser }}>
             {!isLoading && children}
         </AuthContext.Provider>
     );

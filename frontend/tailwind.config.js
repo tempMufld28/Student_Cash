@@ -8,12 +8,15 @@ export default {
         extend: {
             colors: {
                 finance: {
-                    bg: '#f0f2f5',
-                    card: '#ffffff',
-                    primary: '#0a0a0b',
+                    bg: '#F5F1E9',
+                    card: '#FFFFFF',
+                    primary: '#A68A64',
                     danger: '#ef4444',
                     success: '#22c55e',
                     info: '#3b82f6',
+                    text: '#3C2F2F',
+                    input: '#FDFBF7',
+                    inputBorder: '#DDB892',
                 }
             },
             fontFamily: {
