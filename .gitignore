@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Environment variables — NEVER committed
+.env
+backend/.env
+frontend/.env
+
+# Database — local data, not for repo
+backend/database.sqlite
+database.sqlite
+*.sqlite
+*.db
+
+# Build output
+frontend/dist/
+frontend/build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

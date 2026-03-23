@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { Eye, EyeOff, Moon, Sun } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
 
 // Reusable password field with visibility toggle
 const PasswordField = ({ name, value, onChange, placeholder, required, id }) => {
@@ -33,6 +34,7 @@ const PasswordField = ({ name, value, onChange, placeholder, required, id }) => 
 };
 
 const Auth = () => {
+    const { isDark, toggleTheme } = useTheme();
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
     const [error, setError] = useState('');
@@ -211,6 +213,18 @@ const Auth = () => {
             <p className="w-full max-w-md text-center text-xs font-medium text-finance-text/50 mt-4">
                 En modo invitado tus datos se guardan solo en este navegador
             </p>
+
+            {/* Dark mode toggle — bottom-left */}
+            <button
+                onClick={toggleTheme}
+                className="fixed bottom-6 left-6 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 hover:scale-105 z-50 bg-finance-card border border-finance-inputBorder text-finance-text hover:bg-finance-input"
+                title={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            >
+                {isDark
+                    ? <Sun className="w-5 h-5 text-yellow-400" />
+                    : <Moon className="w-5 h-5" />
+                }
+            </button>
         </div>
     );
 };

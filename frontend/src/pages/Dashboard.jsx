@@ -10,7 +10,7 @@ const CATEGORIES = [
 ];
 
 const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#64748b'];
-const API_URL = 'http://127.0.0.1:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
 
 const CATEGORY_CONFIG = {
     'Alimentación':    { color: 'bg-orange-100 text-orange-700', dot: 'bg-orange-400' },
@@ -106,14 +106,18 @@ const Dashboard = () => {
             setTransactions(updated);
             localStorage.setItem('student_cash_transactions', JSON.stringify(updated));
         } else {
-            const res = await fetch(`${API_URL}/transactions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(newTx)
-            });
-            if (res.ok) {
-                const saved = await res.json();
-                setTransactions([saved, ...transactions]);
+            try {
+                const res = await fetch(`${API_URL}/transactions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify(newTx)
+                });
+                if (res.ok) {
+                    const saved = await res.json();
+                    setTransactions([saved, ...transactions]);
+                }
+            } catch (error) {
+                console.error('Error saving transaction:', error);
             }
         }
     };
@@ -124,14 +128,18 @@ const Dashboard = () => {
             setPlannedExpenses(updated);
             localStorage.setItem('student_cash_planned', JSON.stringify(updated));
         } else {
-            const res = await fetch(`${API_URL}/planned-expenses`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(newPlan)
-            });
-            if (res.ok) {
-                const saved = await res.json();
-                setPlannedExpenses([...plannedExpenses, { ...saved, modules: saved.modules || [] }]);
+            try {
+                const res = await fetch(`${API_URL}/planned-expenses`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify(newPlan)
+                });
+                if (res.ok) {
+                    const saved = await res.json();
+                    setPlannedExpenses([...plannedExpenses, { ...saved, modules: saved.modules || [] }]);
+                }
+            } catch (error) {
+                console.error('Error saving planned expense:', error);
             }
         }
     };

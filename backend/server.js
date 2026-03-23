@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -9,12 +10,16 @@ app.use(express.json());
 app.use(cors());
 
 app.use((req, res, next) => {
-    console.log(`[REQ] ${req.method} ${req.url}`, req.body);
+    // Do NOT log req.body — it may contain passwords or sensitive data
+    console.log(`[REQ] ${req.method} ${req.url}`);
     next();
 });
 
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'secret_key_student_cash';
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+    console.warn('[SECURITY WARNING] JWT_SECRET not set in environment. Using insecure fallback — set a strong secret in backend/.env before deploying!');
+    return 'secret_key_student_cash';
+})();
 
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -63,7 +68,7 @@ app.post('/api/auth/login', async (req, res) => {
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(400).json({ error: 'Invalid password' });
 
-        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
         res.json({ message: 'Login successful', token, user: { id: user.id, name: user.name, email: user.email } });
     } catch (error) {
         console.error('Login Error:', error);

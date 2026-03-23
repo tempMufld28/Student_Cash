@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, User, Trash2, Eye, EyeOff, ChevronDown, Camera, Lock, AlertTriangle, X } from 'lucide-react';
+import { LogOut, User, Trash2, Eye, EyeOff, ChevronDown, Camera, Lock, AlertTriangle, X, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
-const API_URL = 'http://127.0.0.1:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
 
 // --- Password field with eye toggle ---
 const PasswordField = ({ value, onChange, placeholder, id }) => {
@@ -298,6 +299,7 @@ const AccountDropdown = ({ onClose }) => {
 const Layout = () => {
     const navigate = useNavigate();
     const { user, isGuest, logout } = useAuth();
+    const { isDark, toggleTheme } = useTheme();
     const [deleteMode, setDeleteMode] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
     const dropdownRef = useRef();
@@ -359,7 +361,19 @@ const Layout = () => {
                 <Outlet context={{ deleteMode }} />
             </main>
 
-            {/* Delete Mode Button */}
+            {/* Dark mode toggle — bottom-left */}
+            <button
+                onClick={toggleTheme}
+                className="fixed bottom-6 left-6 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 hover:scale-105 z-50 bg-finance-card border border-finance-inputBorder text-finance-text hover:bg-finance-input"
+                title={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            >
+                {isDark
+                    ? <Sun className="w-5 h-5 text-yellow-400" />
+                    : <Moon className="w-5 h-5" />
+                }
+            </button>
+
+            {/* Delete Mode Button — bottom-right */}
             <button
                 onClick={() => setDeleteMode((prev) => !prev)}
                 className={`fixed bottom-6 right-6 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-transform z-50 hover:scale-105 ${

@@ -2,8 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Light mode tokens ─────────────────────────────────── */
+:root {
+  --finance-bg:          #F5F1E9;
+  --finance-card:        #FFFFFF;
+  --finance-primary:     #A68A64;
+  --finance-text:        #3C2F2F;
+  --finance-input:       #FDFBF7;
+  --finance-inputBorder: #DDB892;
+}
+
+/* ── Dark mode tokens ──────────────────────────────────── */
+html.dark {
+  --finance-bg:          #121212;
+  --finance-card:        #1E1E1E;
+  --finance-primary:     #888888;
+  --finance-text:        #E0E0E0;
+  --finance-input:       #2A2A2A;
+  --finance-inputBorder: #444444;
+}
+
 @layer base {
   body {
-    @apply bg-finance-bg text-finance-text font-sans antialiased;
+    @apply bg-finance-bg text-finance-text font-sans antialiased transition-colors duration-300;
   }
 }
