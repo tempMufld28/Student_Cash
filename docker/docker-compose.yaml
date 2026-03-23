@@ -1,0 +1,86 @@
+# =============================================
+# docker-compose.yaml — Student-Cash
+# Coloca en: Student_Cash/docker/
+#
+# Uso:
+#   cd Student_Cash
+#   docker compose -f docker/docker-compose.yaml up -d --build
+#
+# Para Raspberry Pi (ARM64):
+#   Compila directamente en la Pi, o usa:
+#   docker buildx build --platform linux/arm64 ...
+# =============================================
+
+version: '3.8'
+
+# Red privada: backend nunca expuesto al exterior
+networks:
+  app-network:
+    driver: bridge
+
+services:
+
+  # ==========================================
+  # FRONTEND — nginx (único servicio público)
+  # ==========================================
+  frontend:
+    build:
+      context: ..                          # Raíz del proyecto Student_Cash/
+      dockerfile: docker/frontend/Dockerfile
+    image: student-cash-frontend
+    container_name: student_cash_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"    # Única puerta al exterior
+    networks:
+      - app-network
+    depends_on:
+      - backend
+    # Límites de recursos para Raspberry Pi
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M   # nginx estático consume muy poco
+
+  # ==========================================
+  # BACKEND — Node.js API (red interna only)
+  # ==========================================
+  backend:
+    build:
+      context: ..                          # Raíz del proyecto Student_Cash/
+      dockerfile: docker/backend/Dockerfile
+    image: student-cash-backend
+    container_name: student_cash_backend
+    restart: unless-stopped
+    # ⚠️ Sin "ports:" — el backend NO está expuesto al host.
+    # nginx accede a él via http://backend:5000 en la red interna.
+    expose:
+      - "5000"
+    networks:
+      - app-network
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      # HOST=0.0.0.0 necesario para escuchar dentro del contenedor
+      HOST: 0.0.0.0
+      # JWT_SECRET: carga desde el archivo .env del host (ver .env.example)
+      JWT_SECRET: ${JWT_SECRET}
+      # Ruta del archivo SQLite dentro del contenedor
+      DB_PATH: /app/data/database.sqlite
+    volumes:
+      # Persiste la base de datos SQLite fuera del contenedor
+      - sqlite-data:/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+
+# =============================================
+# VOLÚMENES
+# =============================================
+volumes:
+  # Datos de SQLite persisten entre reinicios y actualizaciones
+  sqlite-data:
+    driver: local

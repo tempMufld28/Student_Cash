@@ -7,6 +7,7 @@ backend/node_modules/
 .env
 backend/.env
 frontend/.env
+docker/.env
 
 # Database — local data, not for repo
 backend/database.sqlite

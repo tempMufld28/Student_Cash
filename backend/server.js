@@ -281,10 +281,12 @@ app.delete('/api/auth/account', authenticateToken, async (req, res) => {
     }
 });
 
+const HOST = process.env.HOST || '127.0.0.1';
+
 // Ensure DB is initialized before listening
 getDb().then(() => {
-    app.listen(PORT, '127.0.0.1', () => {
-        console.log(`Server running on http://127.0.0.1:${PORT}`);
+    app.listen(PORT, HOST, () => {
+        console.log(`Server running on http://${HOST}:${PORT}`);
     });
 }).catch(err => {
     console.error('Failed to initialize database:', err);
