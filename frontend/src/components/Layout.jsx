@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
-
+// Karol es bien gay super gay (.)(.) 8====D
 // --- Password field with eye toggle ---
 const PasswordField = ({ value, onChange, placeholder, id }) => {
     const [show, setShow] = useState(false);
