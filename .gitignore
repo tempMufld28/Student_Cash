@@ -1,23 +1,18 @@
 # Dependencies
 node_modules/
-frontend/node_modules/
-backend/node_modules/
 
-# Environment variables — NEVER committed
+# Environment variables
 .env
-backend/.env
-frontend/.env
-docker/.env
+.env.*
+!.env.example
 
-# Database — local data, not for repo
-backend/database.sqlite
-database.sqlite
+# Database
 *.sqlite
 *.db
 
 # Build output
-frontend/dist/
-frontend/build/
+dist/
+build/
 
 # Logs
 *.log

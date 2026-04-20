@@ -1,12 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, User, Trash2, Eye, EyeOff, ChevronDown, Camera, Lock, AlertTriangle, X, Moon, Sun } from 'lucide-react';
+import { LogOut, User, Trash2, Eye, EyeOff, ChevronDown, Camera, Lock, AlertTriangle, X, Moon, Sun, WifiOff } from 'lucide-react';
+
+const OfflineBanner = () => {
+    const [offline, setOffline] = useState(!navigator.onLine);
+    useEffect(() => {
+        const on = () => setOffline(false);
+        const off = () => setOffline(true);
+        window.addEventListener('online', on);
+        window.addEventListener('offline', off);
+        return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    }, []);
+    if (!offline) return null;
+    return (
+        <div className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-center gap-2 bg-amber-500 text-white text-xs font-semibold py-2 px-4">
+            <WifiOff size={13} /> Sin conexión — los cambios requieren red
+        </div>
+    );
+};
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { supabase } from '../lib/supabase';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
-// Karol es bien gay super gay (.)(.) 8====D
-// --- Password field with eye toggle ---
 const PasswordField = ({ value, onChange, placeholder, id }) => {
     const [show, setShow] = useState(false);
     return (
@@ -31,12 +46,10 @@ const PasswordField = ({ value, onChange, placeholder, id }) => {
     );
 };
 
-// --- Account Dropdown Panel ---
 const AccountDropdown = ({ onClose }) => {
-    const { user, token, isGuest, logout, updateUser } = useAuth();
+    const { user, isGuest, logout, updateUser } = useAuth();
     const navigate = useNavigate();
 
-    // Profile state
     const [name, setName] = useState(user?.name || '');
     const [gender, setGender] = useState(user?.gender || '');
     const [avatar, setAvatar] = useState(user?.avatar || '');
@@ -44,7 +57,6 @@ const AccountDropdown = ({ onClose }) => {
     const [profileError, setProfileError] = useState('');
     const [savingProfile, setSavingProfile] = useState(false);
 
-    // Password state
     const [currentPw, setCurrentPw] = useState('');
     const [newPw, setNewPw] = useState('');
     const [confirmPw, setConfirmPw] = useState('');
@@ -52,7 +64,6 @@ const AccountDropdown = ({ onClose }) => {
     const [pwError, setPwError] = useState('');
     const [changingPw, setChangingPw] = useState(false);
 
-    // Delete account state
     const [deleteChecked, setDeleteChecked] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
@@ -68,40 +79,32 @@ const AccountDropdown = ({ onClose }) => {
     };
 
     const handleSaveProfile = async () => {
-        setProfileMsg('');
-        setProfileError('');
-        setSavingProfile(true);
+        setProfileMsg(''); setProfileError(''); setSavingProfile(true);
         try {
-            const res = await fetch(`${API_URL}/auth/profile`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ name, gender, avatar }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Error al guardar');
-            updateUser(data.user);
+            await updateUser({ name, gender, avatar });
             setProfileMsg('¡Perfil actualizado correctamente!');
         } catch (err) {
-            setProfileError(err.message);
+            setProfileError(err.message || 'Error al guardar');
         } finally {
             setSavingProfile(false);
         }
     };
 
     const handleChangePassword = async () => {
-        setPwMsg('');
-        setPwError('');
+        setPwMsg(''); setPwError('');
         if (newPw !== confirmPw) { setPwError('Las contraseñas nuevas no coinciden'); return; }
         if (newPw.length < 6) { setPwError('La contraseña debe tener al menos 6 caracteres'); return; }
         setChangingPw(true);
         try {
-            const res = await fetch(`${API_URL}/auth/change-password`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: user.email,
+                password: currentPw,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Error al cambiar contraseña');
+            if (signInError) throw new Error('La contraseña actual es incorrecta');
+
+            const { error } = await supabase.auth.updateUser({ password: newPw });
+            if (error) throw error;
+
             setPwMsg('¡Contraseña actualizada!');
             setCurrentPw(''); setNewPw(''); setConfirmPw('');
         } catch (err) {
@@ -112,31 +115,21 @@ const AccountDropdown = ({ onClose }) => {
     };
 
     const handleDeleteAccount = async () => {
-        if (!deleteChecked) {
-            setDeleteError('Debes marcar la casilla de confirmación primero');
-            return;
-        }
-        setDeleting(true);
-        setDeleteError('');
-        console.log('[Delete Account] Iniciando borrado...');
+        if (!deleteChecked) { setDeleteError('Debes marcar la casilla de confirmación primero'); return; }
+        setDeleting(true); setDeleteError('');
         try {
-            const res = await fetch(`${API_URL}/auth/account`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            console.log('[Delete Account] Respuesta:', res.status);
-            if (!res.ok) throw new Error('Error al borrar la cuenta');
-            logout();
+            const { error } = await supabase.rpc('delete_user');
+            if (error) throw error;
+            await logout();
             navigate('/auth');
         } catch (err) {
-            console.error('[Delete Account] Error:', err);
             setDeleteError(err.message);
             setDeleting(false);
         }
     };
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/auth');
     };
 
@@ -144,7 +137,6 @@ const AccountDropdown = ({ onClose }) => {
 
     return (
         <div className="absolute top-full right-0 mt-2 w-80 bg-finance-card border border-finance-inputBorder rounded-2xl shadow-2xl z-50 overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-finance-inputBorder bg-finance-input/60">
                 <span className="text-sm font-bold text-finance-text flex items-center gap-2">
                     <User size={15} className="text-finance-primary" /> Configuración de Cuenta
@@ -155,7 +147,6 @@ const AccountDropdown = ({ onClose }) => {
             </div>
 
             <div className="overflow-y-auto max-h-[80vh] p-5 space-y-5">
-                {/* Avatar */}
                 <div className="flex flex-col items-center gap-2">
                     <div className="relative">
                         <div className="w-20 h-20 rounded-full bg-finance-primary/20 border-2 border-finance-primary/40 flex items-center justify-center overflow-hidden">
@@ -180,16 +171,10 @@ const AccountDropdown = ({ onClose }) => {
                     {isGuest && <span className="text-xs text-finance-text/50 bg-finance-input px-2 py-0.5 rounded-full border border-finance-inputBorder">Modo Invitado</span>}
                 </div>
 
-                {/* Profile Info */}
                 <div className="space-y-3">
                     <div>
                         <label className="block text-xs font-semibold text-finance-text mb-1">Nombre</label>
-                        <input
-                            value={name}
-                            onChange={e => setName(e.target.value)}
-                            disabled={isGuest}
-                            className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        />
+                        <input value={name} onChange={e => setName(e.target.value)} disabled={isGuest} className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all" />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-finance-text mb-1">Correo Electrónico</label>
@@ -200,12 +185,7 @@ const AccountDropdown = ({ onClose }) => {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-finance-text mb-1">Género</label>
-                        <select
-                            value={gender}
-                            onChange={e => setGender(e.target.value)}
-                            disabled={isGuest}
-                            className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        >
+                        <select value={gender} onChange={e => setGender(e.target.value)} disabled={isGuest} className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all">
                             <option value="">Selecciona tu género</option>
                             <option value="Mujer">Mujer</option>
                             <option value="Hombre">Hombre</option>
@@ -216,19 +196,13 @@ const AccountDropdown = ({ onClose }) => {
                     {profileMsg && <p className="text-xs text-green-600 font-medium bg-green-50 border border-green-200 rounded-lg p-2">{profileMsg}</p>}
                     {profileError && <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-200 rounded-lg p-2">{profileError}</p>}
 
-                    <button
-                        onClick={handleSaveProfile}
-                        disabled={isGuest || savingProfile}
-                        className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    >
+                    <button onClick={handleSaveProfile} disabled={isGuest || savingProfile} className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                         {savingProfile ? 'Guardando...' : 'Guardar Cambios'}
                     </button>
                 </div>
 
-                {/* Divider */}
                 <div className="h-px bg-finance-inputBorder" />
 
-                {/* Change Password */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-bold text-finance-text flex items-center gap-1.5">
                         <Lock size={13} className="text-finance-primary" /> Cambiar Contraseña
@@ -240,27 +214,17 @@ const AccountDropdown = ({ onClose }) => {
                     {pwMsg && <p className="text-xs text-green-600 font-medium bg-green-50 border border-green-200 rounded-lg p-2">{pwMsg}</p>}
                     {pwError && <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-200 rounded-lg p-2">{pwError}</p>}
 
-                    <button
-                        onClick={handleChangePassword}
-                        disabled={isGuest || changingPw}
-                        className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    >
+                    <button onClick={handleChangePassword} disabled={isGuest || changingPw} className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                         {changingPw ? 'Actualizando...' : 'Actualizar Contraseña'}
                     </button>
                 </div>
 
-                {/* Divider */}
                 <div className="h-px bg-finance-inputBorder" />
 
-                {/* Logout */}
-                <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 border border-finance-inputBorder hover:bg-finance-input text-finance-text font-semibold py-2.5 rounded-xl transition-all text-sm"
-                >
+                <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 border border-finance-inputBorder hover:bg-finance-input text-finance-text font-semibold py-2.5 rounded-xl transition-all text-sm">
                     <LogOut size={15} /> Cerrar Sesión
                 </button>
 
-                {/* Danger Zone */}
                 {!isGuest && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
                         <h3 className="text-xs font-bold text-red-600 flex items-center gap-1.5">
@@ -268,12 +232,7 @@ const AccountDropdown = ({ onClose }) => {
                         </h3>
                         <p className="text-xs text-red-500">Una vez que elimines tu cuenta, no hay vuelta atrás.</p>
                         <label className="flex items-start gap-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={deleteChecked}
-                                onChange={e => setDeleteChecked(e.target.checked)}
-                                className="mt-0.5 accent-red-600"
-                            />
+                            <input type="checkbox" checked={deleteChecked} onChange={e => setDeleteChecked(e.target.checked)} className="mt-0.5 accent-red-600" />
                             <span className="text-xs text-red-600 font-medium">Confirmo que deseo borrar mi cuenta permanentemente</span>
                         </label>
                         {deleteError && <p className="text-xs text-red-600 font-medium">{deleteError}</p>}
@@ -281,9 +240,7 @@ const AccountDropdown = ({ onClose }) => {
                             type="button"
                             onClick={handleDeleteAccount}
                             className={`w-full flex items-center justify-center gap-2 text-white font-semibold py-2.5 rounded-xl transition-all text-sm ${
-                                deleteChecked && !deleting
-                                    ? 'bg-red-500 hover:bg-red-600 cursor-pointer'
-                                    : 'bg-red-300 cursor-not-allowed'
+                                deleteChecked && !deleting ? 'bg-red-500 hover:bg-red-600 cursor-pointer' : 'bg-red-300 cursor-not-allowed'
                             }`}
                         >
                             <Trash2 size={14} /> {deleting ? 'Borrando...' : 'Borrar Cuenta'}
@@ -295,10 +252,9 @@ const AccountDropdown = ({ onClose }) => {
     );
 };
 
-// --- Main Layout ---
 const Layout = () => {
     const navigate = useNavigate();
-    const { user, isGuest, logout } = useAuth();
+    const { user, isGuest } = useAuth();
     const { isDark, toggleTheme } = useTheme();
     const [deleteMode, setDeleteMode] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -308,7 +264,6 @@ const Layout = () => {
     const initials = userName.charAt(0).toUpperCase();
     const avatar = user?.avatar;
 
-    // Close dropdown on outside click
     useEffect(() => {
         const handler = (e) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -321,7 +276,7 @@ const Layout = () => {
 
     return (
         <div className="min-h-screen flex flex-col pt-1">
-            {/* Top Navbar */}
+            <OfflineBanner />
             <header className="bg-finance-card px-6 py-4 flex justify-between items-center sticky top-0 z-10 mx-4 mt-2 rounded-2xl shadow-sm border border-finance-inputBorder">
                 <h1 className="text-xl md:text-2xl font-bold text-finance-text tracking-tight">Student-Cash</h1>
 
@@ -332,7 +287,6 @@ const Layout = () => {
                         </span>
                     )}
 
-                    {/* Account button with dropdown */}
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setShowDropdown(s => !s)}
@@ -356,26 +310,20 @@ const Layout = () => {
                 </div>
             </header>
 
-            {/* Main Content Area */}
             <main className="flex-1 w-full max-w-6xl mx-auto p-4 md:p-6 pb-24">
                 <Outlet context={{ deleteMode }} />
             </main>
 
-            {/* Dark mode toggle — bottom-left */}
             <button
                 onClick={toggleTheme}
                 className="fixed bottom-6 left-6 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 hover:scale-105 z-50 bg-finance-card border border-finance-inputBorder text-finance-text hover:bg-finance-input"
                 title={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
             >
-                {isDark
-                    ? <Sun className="w-5 h-5 text-yellow-400" />
-                    : <Moon className="w-5 h-5" />
-                }
+                {isDark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5" />}
             </button>
 
-            {/* Delete Mode Button — bottom-right */}
             <button
-                onClick={() => setDeleteMode((prev) => !prev)}
+                onClick={() => setDeleteMode(prev => !prev)}
                 className={`fixed bottom-6 right-6 w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-transform z-50 hover:scale-105 ${
                     deleteMode ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-finance-primary hover:brightness-95 text-white'
                 }`}

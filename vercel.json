@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    { "source": "/((?!assets|icons|sw.js|workbox.*|manifest.webmanifest|registerSW.js).*)", "destination": "/index.html" }
+  ]
+}

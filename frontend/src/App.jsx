@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
+import InstallPrompt from './components/InstallPrompt';
 
 const ProtectedRoute = ({ children }) => {
     const { user, isGuest } = useAuth();
@@ -37,6 +38,7 @@ function App() {
         <AuthProvider>
             <BrowserRouter>
                 <AppRoutes />
+                <InstallPrompt />
             </BrowserRouter>
         </AuthProvider>
     );
