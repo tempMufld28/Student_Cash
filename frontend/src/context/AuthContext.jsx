@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext();
 
@@ -6,62 +7,90 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null);
     const [isGuest, setIsGuest] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const savedToken = localStorage.getItem('student_cash_token');
-        const savedUser = localStorage.getItem('student_cash_user');
-        const guestMode = localStorage.getItem('student_cash_guest');
-
-        if (savedToken && savedUser) {
-            setToken(savedToken);
-            setUser(JSON.parse(savedUser));
-        } else if (guestMode === 'true') {
+        if (localStorage.getItem('student_cash_guest') === 'true') {
             setIsGuest(true);
             setUser({ name: 'Invitado', email: '' });
+            setIsLoading(false);
+            return;
         }
-        setIsLoading(false);
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                loadProfile(session.user);
+            } else {
+                setIsLoading(false);
+            }
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session?.user) {
+                loadProfile(session.user);
+            } else if (!localStorage.getItem('student_cash_guest')) {
+                setUser(null);
+                setIsLoading(false);
+            }
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
-    const login = (userData, authToken) => {
-        localStorage.setItem('student_cash_token', authToken);
-        localStorage.setItem('student_cash_user', JSON.stringify(userData));
-        localStorage.removeItem('student_cash_guest');
-        setToken(authToken);
-        setUser(userData);
-        setIsGuest(false);
+    const loadProfile = async (authUser) => {
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('name, gender, avatar')
+            .eq('id', authUser.id)
+            .single();
+
+        setUser({
+            id: authUser.id,
+            email: authUser.email,
+            name: profile?.name || authUser.user_metadata?.name || 'Usuario',
+            gender: profile?.gender || '',
+            avatar: profile?.avatar || '',
+        });
+        setIsLoading(false);
+    };
+
+    const login = async (email, password) => {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+    };
+
+    const register = async (name, email, password) => {
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { name } },
+        });
+        if (error) throw error;
+        return data;
     };
 
     const loginAsGuest = () => {
         localStorage.setItem('student_cash_guest', 'true');
-        localStorage.removeItem('student_cash_token');
-        localStorage.removeItem('student_cash_user');
         setIsGuest(true);
         setUser({ name: 'Invitado', email: '' });
-        setToken(null);
     };
 
-    const logout = () => {
-        localStorage.removeItem('student_cash_token');
-        localStorage.removeItem('student_cash_user');
+    const logout = async () => {
         localStorage.removeItem('student_cash_guest');
-        setToken(null);
-        setUser(null);
         setIsGuest(false);
+        setUser(null);
+        if (!isGuest) await supabase.auth.signOut();
     };
 
-    const updateUser = (updatedUserData) => {
-        const merged = { ...user, ...updatedUserData };
-        setUser(merged);
-        if (!isGuest) {
-            localStorage.setItem('student_cash_user', JSON.stringify(merged));
-        }
+    const updateUser = async ({ name, gender, avatar }) => {
+        if (isGuest) return;
+        await supabase.from('profiles').update({ name, gender, avatar }).eq('id', user.id);
+        setUser(prev => ({ ...prev, name, gender, avatar }));
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, isGuest, isLoading, login, loginAsGuest, logout, updateUser }}>
+        <AuthContext.Provider value={{ user, isGuest, isLoading, login, register, loginAsGuest, logout, updateUser }}>
             {!isLoading && children}
         </AuthContext.Provider>
     );

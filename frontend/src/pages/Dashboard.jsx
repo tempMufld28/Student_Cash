@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 
 const CATEGORIES = [
@@ -10,7 +11,6 @@ const CATEGORIES = [
 ];
 
 const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#64748b'];
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
 
 const CATEGORY_CONFIG = {
     'Alimentación':    { color: 'bg-orange-100 text-orange-700', dot: 'bg-orange-400' },
@@ -28,7 +28,7 @@ const CATEGORY_CONFIG = {
 const formatDate = (dateStr) => {
     if (!dateStr) return '';
     try {
-        const [y, m, d] = dateStr.split('-');
+        const [y, m, d] = String(dateStr).split('T')[0].split('-');
         const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
         return `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}`;
     } catch { return dateStr; }
@@ -47,9 +47,7 @@ const formatInputAmount = (value) => {
     if (!numeric) return '';
     const [intPart, decPart] = numeric.split('.');
     const intNumber = intPart ? parseInt(intPart, 10) : 0;
-    const formattedInt = Number.isNaN(intNumber)
-        ? ''
-        : intNumber.toLocaleString('en-US');
+    const formattedInt = Number.isNaN(intNumber) ? '' : intNumber.toLocaleString('en-US');
     if (decPart !== undefined) {
         return `${formattedInt || '0'}.${decPart.slice(0, 2)}`;
     }
@@ -60,44 +58,26 @@ const Dashboard = () => {
     const [activeTab, setActiveTab] = useState('resumen');
     const [transactions, setTransactions] = useState([]);
     const [plannedExpenses, setPlannedExpenses] = useState([]);
-    const { user, token, isGuest } = useAuth();
+    const { user, isGuest } = useAuth();
     const { deleteMode } = useOutletContext() || {};
 
-    // Load Data
     useEffect(() => {
         if (isGuest) {
-            const localTrans = JSON.parse(localStorage.getItem('student_cash_transactions') || '[]');
-            const localPlan = JSON.parse(localStorage.getItem('student_cash_planned') || '[]');
-            setTransactions(localTrans);
-            setPlannedExpenses(localPlan);
-        } else if (token) {
+            setTransactions(JSON.parse(localStorage.getItem('student_cash_transactions') || '[]'));
+            setPlannedExpenses(JSON.parse(localStorage.getItem('student_cash_planned') || '[]'));
+        } else if (user?.id) {
             fetchData();
         }
-    }, [token, isGuest]);
+    }, [user?.id, isGuest]);
 
     const fetchData = async () => {
-        try {
-            const transRes = await fetch(`${API_URL}/transactions`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const transData = await transRes.json();
-            if (transRes.ok) setTransactions(transData);
+        const [transRes, planRes] = await Promise.all([
+            supabase.from('transactions').select('*').order('date', { ascending: false }),
+            supabase.from('planned_expenses').select('*').order('date', { ascending: true }),
+        ]);
 
-            const planRes = await fetch(`${API_URL}/planned-expenses`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const planData = await planRes.json();
-            if (planRes.ok) {
-                const normalized = planData.map(p => ({
-                    ...p,
-                    modules: p.modules ? JSON.parse(p.modules) : [],
-                    collaborators: p.collaborators ? JSON.parse(p.collaborators) : [],
-                }));
-                setPlannedExpenses(normalized);
-            }
-        } catch (error) {
-            console.error('Error fetching data:', error);
-        }
+        if (!transRes.error) setTransactions(transRes.data);
+        if (!planRes.error) setPlannedExpenses(planRes.data);
     };
 
     const saveTransaction = async (newTx) => {
@@ -105,21 +85,14 @@ const Dashboard = () => {
             const updated = [...transactions, { ...newTx, id: Date.now() }];
             setTransactions(updated);
             localStorage.setItem('student_cash_transactions', JSON.stringify(updated));
-        } else {
-            try {
-                const res = await fetch(`${API_URL}/transactions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify(newTx)
-                });
-                if (res.ok) {
-                    const saved = await res.json();
-                    setTransactions([saved, ...transactions]);
-                }
-            } catch (error) {
-                console.error('Error saving transaction:', error);
-            }
+            return;
         }
+        const { data, error } = await supabase
+            .from('transactions')
+            .insert({ ...newTx, user_id: user.id })
+            .select()
+            .single();
+        if (!error) setTransactions(prev => [data, ...prev]);
     };
 
     const savePlanned = async (newPlan) => {
@@ -127,21 +100,14 @@ const Dashboard = () => {
             const updated = [...plannedExpenses, { ...newPlan, id: Date.now() }];
             setPlannedExpenses(updated);
             localStorage.setItem('student_cash_planned', JSON.stringify(updated));
-        } else {
-            try {
-                const res = await fetch(`${API_URL}/planned-expenses`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify(newPlan)
-                });
-                if (res.ok) {
-                    const saved = await res.json();
-                    setPlannedExpenses([...plannedExpenses, { ...saved, modules: saved.modules || [] }]);
-                }
-            } catch (error) {
-                console.error('Error saving planned expense:', error);
-            }
+            return;
         }
+        const { data, error } = await supabase
+            .from('planned_expenses')
+            .insert({ ...newPlan, user_id: user.id })
+            .select()
+            .single();
+        if (!error) setPlannedExpenses(prev => [...prev, data]);
     };
 
     const deleteTransaction = async (id) => {
@@ -151,17 +117,8 @@ const Dashboard = () => {
             localStorage.setItem('student_cash_transactions', JSON.stringify(updated));
             return;
         }
-        try {
-            const res = await fetch(`${API_URL}/transactions/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                setTransactions(transactions.filter(t => t.id !== id));
-            }
-        } catch (error) {
-            console.error('Error deleting transaction', error);
-        }
+        const { error } = await supabase.from('transactions').delete().eq('id', id);
+        if (!error) setTransactions(prev => prev.filter(t => t.id !== id));
     };
 
     const deletePlanned = async (id) => {
@@ -171,22 +128,30 @@ const Dashboard = () => {
             localStorage.setItem('student_cash_planned', JSON.stringify(updated));
             return;
         }
-        try {
-            const res = await fetch(`${API_URL}/planned-expenses/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                setPlannedExpenses(plannedExpenses.filter(p => p.id !== id));
-            }
-        } catch (error) {
-            console.error('Error deleting planned expense', error);
+        const { error } = await supabase.from('planned_expenses').delete().eq('id', id);
+        if (!error) setPlannedExpenses(prev => prev.filter(p => p.id !== id));
+    };
+
+    const updatePlanned = async (updated) => {
+        if (isGuest) {
+            const list = plannedExpenses.map(p => p.id === updated.id ? updated : p);
+            setPlannedExpenses(list);
+            localStorage.setItem('student_cash_planned', JSON.stringify(list));
+            return;
         }
+        const { id, user_id: _uid, created_at: _ca, ...fields } = updated;
+        const { data, error } = await supabase
+            .from('planned_expenses')
+            .update(fields)
+            .eq('id', id)
+            .select()
+            .single();
+        if (!error) setPlannedExpenses(prev => prev.map(p => p.id === id ? data : p));
+        return error ? null : data;
     };
 
     return (
         <div className="space-y-6">
-            {/* Tabs Resumen/Planificación — finance-primary style */}
             <div className="flex bg-finance-primary p-1 rounded-xl w-fit mb-6 shadow-sm gap-1">
                 <button
                     onClick={() => setActiveTab('resumen')}
@@ -222,13 +187,7 @@ const Dashboard = () => {
                     plannedExpenses={plannedExpenses}
                     onAddPlanned={savePlanned}
                     onDeletePlanned={deletePlanned}
-                    onUpdatePlanned={(updatedPlan) => {
-                        setPlannedExpenses((prev) => prev.map((p) => (p.id === updatedPlan.id ? updatedPlan : p)));
-                        if (isGuest) {
-                            const updated = plannedExpenses.map((p) => (p.id === updatedPlan.id ? updatedPlan : p));
-                            localStorage.setItem('student_cash_planned', JSON.stringify(updated));
-                        }
-                    }}
+                    onUpdatePlanned={updatePlanned}
                     deleteMode={deleteMode}
                 />
             )}
@@ -258,16 +217,12 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
 
     const expenses = transactions.filter(t => t.type === 'Gasto');
     const incomes = transactions.filter(t => t.type === 'Ingreso');
-
-    const totalExpense = expenses.reduce((acc, curr) => acc + curr.amount, 0);
-    const totalIncome = incomes.reduce((acc, curr) => acc + curr.amount, 0);
+    const totalExpense = expenses.reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
+    const totalIncome = incomes.reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
     const balance = totalIncome - totalExpense;
 
-    // Chart data
     const chartDataMap = {};
-    expenses.forEach(e => {
-        chartDataMap[e.category] = (chartDataMap[e.category] || 0) + e.amount;
-    });
+    expenses.forEach(e => { chartDataMap[e.category] = (chartDataMap[e.category] || 0) + parseAmount(e.amount); });
     const chartData = Object.keys(chartDataMap).map(c => ({ name: c, value: chartDataMap[c] })).filter(d => d.value > 0);
 
     const [chartType, setChartType] = useState('pie');
@@ -275,14 +230,11 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                {/* Left: Add Transaction */}
                 <div className="bg-finance-card p-6 rounded-2xl shadow-sm border border-finance-inputBorder h-full">
                     <h2 className="text-lg font-bold text-finance-text mb-6 flex items-center gap-2">
                         <span className="text-xl">+</span> Agregar Transacción
                     </h2>
 
-                    {/* Gasto/Ingreso toggle — finance-primary style */}
                     <div className="flex bg-finance-primary p-1 rounded-xl w-full mb-6 gap-1">
                         <button
                             onClick={() => { setType('Gasto'); setCat(''); }}
@@ -316,7 +268,6 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                             <input
                                 type="text"
                                 inputMode="decimal"
-                                step="0.01"
                                 value={amount}
                                 onChange={e => setAmount(formatInputAmount(e.target.value))}
                                 placeholder="0.00"
@@ -343,7 +294,6 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                     </form>
                 </div>
 
-                {/* Right: Chart */}
                 <div className="bg-finance-card p-6 rounded-2xl shadow-sm border border-finance-inputBorder h-full flex flex-col">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg font-bold text-finance-text">Distribución de Gastos</h2>
@@ -374,14 +324,14 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                             ))}
                                         </Pie>
-                                        <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
+                                        <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
                                     </PieChart>
                                 ) : (
                                     <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis dataKey="name" />
                                         <YAxis />
-                                        <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
+                                        <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
                                         <Legend />
                                         <Bar dataKey="value">
                                             {chartData.map((entry, index) => (
@@ -408,8 +358,7 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                 </div>
             </div>
 
-            {/* Bottom: Summary & List */}
-                <div className="bg-finance-card p-6 rounded-2xl shadow-sm border border-finance-inputBorder">
+            <div className="bg-finance-card p-6 rounded-2xl shadow-sm border border-finance-inputBorder">
                 <h2 className="text-lg font-bold text-finance-text mb-6">Resumen Financiero</h2>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -435,7 +384,6 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                             return (
                                 <div key={t.id} className="flex justify-between items-center p-4 border border-finance-inputBorder rounded-xl hover:bg-finance-input/60 transition-colors">
                                     <div className="flex items-center gap-3">
-                                        {/* Category color dot */}
                                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${catInfo.color}`}>
                                             <div className={`w-3 h-3 rounded-full ${catInfo.dot}`} />
                                         </div>
@@ -487,139 +435,63 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [isViewing, setIsViewing] = useState(false);
 
-    const { token, isGuest } = useAuth();
-    const openPlan = (plan) => {
-        setSelectedPlan(plan);
-        setIsViewing(true);
-    };
-    const closePlan = () => {
-        setIsViewing(false);
-        setSelectedPlan(null);
-    };
+    const openPlan = (plan) => { setSelectedPlan(plan); setIsViewing(true); };
+    const closePlan = () => { setIsViewing(false); setSelectedPlan(null); };
 
     const handleAddModule = () => {
-        setModules((prev) => [...prev, { id: Date.now(), label: '', amount: '', multiplier: '1' }]);
+        setModules(prev => [...prev, { id: Date.now(), label: '', amount: '', multiplier: '1' }]);
     };
 
     const handleModuleChange = (id, field, value) => {
-        setModules((prev) =>
-            prev.map((m) =>
-                m.id === id
-                    ? {
-                        ...m,
-                        [field]: field === 'amount'
-                            ? formatInputAmount(value)
-                            : value
-                    }
-                    : m
-            )
-        );
+        setModules(prev => prev.map(m =>
+            m.id === id ? { ...m, [field]: field === 'amount' ? formatInputAmount(value) : value } : m
+        ));
     };
 
-    const handleRemoveModule = (id) => {
-        setModules((prev) => prev.filter((m) => m.id !== id));
-    };
+    const handleRemoveModule = (id) => setModules(prev => prev.filter(m => m.id !== id));
 
     const handleAddCollaborator = () => {
-        setCollaborators((prev) => [
-            ...prev,
-            { id: Date.now(), name: '', email: '', mode: 'percent', percent: '', moduleId: '' }
-        ]);
+        setCollaborators(prev => [...prev, { id: Date.now(), name: '', email: '', mode: 'percent', percent: '', moduleId: '' }]);
     };
 
     const handleCollaboratorChange = (id, field, value) => {
-        setCollaborators((prev) =>
-            prev.map((c) =>
-                c.id === id
-                    ? { ...c, [field]: value }
-                    : c
-            )
-        );
+        setCollaborators(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
     };
 
-    const handleRemoveCollaborator = (id) => {
-        setCollaborators((prev) => prev.filter((c) => c.id !== id));
-    };
+    const handleRemoveCollaborator = (id) => setCollaborators(prev => prev.filter(c => c.id !== id));
 
     const handleSubmit = (e) => {
         e.preventDefault();
         const numericBase = parseAmount(baseAmount);
         const numericModules = modules
-            .map((m) => ({
-                ...m,
-                amount: parseAmount(m.amount),
-                multiplier: parseAmount(m.multiplier || 1),
-            }))
-            .filter((m) => m.label && m.amount > 0 && m.multiplier > 0);
+            .map(m => ({ ...m, amount: parseAmount(m.amount), multiplier: parseAmount(m.multiplier || 1) }))
+            .filter(m => m.label && m.amount > 0 && m.multiplier > 0);
 
         if (!desc || (!numericBase && numericModules.length === 0) || !date) return;
 
         const extrasTotal = numericModules.reduce((acc, curr) => acc + curr.amount * curr.multiplier, 0);
         const total = numericBase + extrasTotal;
 
-        const moduleTotalsById = new Map(
-            numericModules.map((m) => [String(m.id), m.amount * m.multiplier])
-        );
+        const moduleTotalsById = new Map(numericModules.map(m => [String(m.id), m.amount * m.multiplier]));
         const cleanCollaborators = collaborators
-            .map((c) => {
+            .map(c => {
                 const percent = parseAmount(c.percent);
                 const share = c.mode === 'module'
                     ? (moduleTotalsById.get(String(c.moduleId)) || 0)
                     : (total * (percent / 100));
                 return { ...c, percent, share };
             })
-            .filter((c) => c.name && (c.email || '').length >= 0 && c.share > 0);
+            .filter(c => c.name && c.share > 0);
 
-        onAddPlanned({
-            description: desc,
-            amount: total,
-            date,
-            modules: numericModules,
-            deadlineDate,
-            eventDate,
-            collaborators: cleanCollaborators,
-        });
-        setDesc('');
-        setBaseAmount('');
-        setModules([]);
-        setCollaborators([]);
-        setIsAdding(false);
+        onAddPlanned({ description: desc, amount: total, date, modules: numericModules, deadline_date: deadlineDate, event_date: eventDate, collaborators: cleanCollaborators });
+        setDesc(''); setBaseAmount(''); setModules([]); setCollaborators([]); setIsAdding(false);
     };
 
-    const total = plannedExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+    const total = plannedExpenses.reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
 
-    const updatePlanned = async (updated) => {
-        if (isGuest) {
-            onUpdatePlanned(updated);
-            return;
-        }
-        try {
-            const res = await fetch(`${API_URL}/planned-expenses/${updated.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    description: updated.description,
-                    amount: updated.amount,
-                    date: updated.date,
-                    modules: updated.modules || [],
-                    deadlineDate: updated.deadline_date || null,
-                    eventDate: updated.event_date || null,
-                    collaborators: updated.collaborators || [],
-                }),
-            });
-            if (res.ok) {
-                const saved = await res.json();
-                const normalized = {
-                    ...saved,
-                    modules: saved.modules || [],
-                    collaborators: saved.collaborators || [],
-                };
-                onUpdatePlanned(normalized);
-                setSelectedPlan(normalized);
-            }
-        } catch (err) {
-            console.error('Error updating planned expense', err);
-        }
+    const handleUpdatePlanned = async (updated) => {
+        const saved = await onUpdatePlanned(updated);
+        if (saved) setSelectedPlan(saved);
     };
 
     return (
@@ -633,7 +505,7 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
                     onClick={() => setIsAdding(!isAdding)}
                     className="bg-finance-primary hover:brightness-95 text-white font-medium px-4 py-2 rounded-xl transition-colors text-sm flex items-center gap-1.5"
                 >
-                    <span>{isAdding ? 'Cancelar' : '+ Agregar'}</span>
+                    {isAdding ? 'Cancelar' : '+ Agregar'}
                 </button>
             </div>
 
@@ -641,71 +513,25 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
                 <form onSubmit={handleSubmit} className="mb-8 p-4 bg-finance-input rounded-xl border border-finance-inputBorder grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                     <div className="sm:col-span-2">
                         <label className="block text-xs font-medium text-finance-text mb-1">Descripción principal</label>
-                        <input
-                            type="text"
-                            value={desc}
-                            onChange={e => setDesc(e.target.value)}
-                            required
-                            className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40"
-                        />
+                        <input type="text" value={desc} onChange={e => setDesc(e.target.value)} required className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-finance-text mb-1">Monto principal ($)</label>
-                        <input
-                            type="text"
-                            inputMode="decimal"
-                            step="0.01"
-                            value={baseAmount}
-                            onChange={e => setBaseAmount(formatInputAmount(e.target.value))}
-                            className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40"
-                            placeholder="0.00"
-                        />
+                        <input type="text" inputMode="decimal" value={baseAmount} onChange={e => setBaseAmount(formatInputAmount(e.target.value))} placeholder="0.00" className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
                     </div>
                     <div className="sm:col-span-4">
                         <div className="flex justify-between items-center mb-2">
                             <label className="block text-xs font-medium text-finance-text">Módulos de gasto extra</label>
-                            <button
-                                type="button"
-                                onClick={handleAddModule}
-                                className="text-xs font-semibold text-finance-primary hover:brightness-95"
-                            >
-                                + Agregar módulo
-                            </button>
+                            <button type="button" onClick={handleAddModule} className="text-xs font-semibold text-finance-primary hover:brightness-95">+ Agregar módulo</button>
                         </div>
                         {modules.length > 0 && (
                             <div className="space-y-2">
-                                {modules.map((m) => (
+                                {modules.map(m => (
                                     <div key={m.id} className="grid grid-cols-6 gap-2 items-center">
-                                        <input
-                                            type="text"
-                                            value={m.label}
-                                            onChange={(e) => handleModuleChange(m.id, 'label', e.target.value)}
-                                            placeholder="Ej: Transporte"
-                                            className="col-span-3 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40"
-                                        />
-                                        <input
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={m.amount}
-                                            onChange={(e) => handleModuleChange(m.id, 'amount', e.target.value)}
-                                            placeholder="0.00"
-                                            className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text placeholder:text-finance-text/40"
-                                        />
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            value={m.multiplier}
-                                            onChange={(e) => handleModuleChange(m.id, 'multiplier', e.target.value)}
-                                            placeholder="1"
-                                            className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveModule(m.id)}
-                                            className="text-[11px] text-red-500 hover:text-red-600 font-semibold"
-                                        >
-                                            Quitar
-                                        </button>
+                                        <input type="text" value={m.label} onChange={e => handleModuleChange(m.id, 'label', e.target.value)} placeholder="Ej: Transporte" className="col-span-3 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
+                                        <input type="text" inputMode="decimal" value={m.amount} onChange={e => handleModuleChange(m.id, 'amount', e.target.value)} placeholder="0.00" className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text placeholder:text-finance-text/40" />
+                                        <input type="number" min="1" value={m.multiplier} onChange={e => handleModuleChange(m.id, 'multiplier', e.target.value)} placeholder="1" className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text" />
+                                        <button type="button" onClick={() => handleRemoveModule(m.id)} className="text-[11px] text-red-500 hover:text-red-600 font-semibold">Quitar</button>
                                     </div>
                                 ))}
                             </div>
@@ -713,95 +539,42 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
                     </div>
                     <div className="sm:col-span-2">
                         <label className="block text-xs font-medium text-finance-text mb-1">Fecha límite para reunir el dinero</label>
-                        <input
-                            type="date"
-                            value={deadlineDate}
-                            onChange={(e) => setDeadlineDate(e.target.value)}
-                            className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text"
-                        />
+                        <input type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text" />
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-finance-text mb-1">Fecha del evento / gasto</label>
-                        <input
-                            type="date"
-                            value={eventDate}
-                            onChange={(e) => setEventDate(e.target.value)}
-                            className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text"
-                        />
+                        <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text" />
                     </div>
                     <div className="sm:col-span-4">
                         <div className="flex justify-between items-center mb-2">
                             <label className="block text-xs font-medium text-finance-text">Colaboración (opcional)</label>
-                            <button
-                                type="button"
-                                onClick={handleAddCollaborator}
-                                className="text-xs font-semibold text-finance-primary hover:brightness-95"
-                            >
-                                + Agregar colaborador
-                            </button>
+                            <button type="button" onClick={handleAddCollaborator} className="text-xs font-semibold text-finance-primary hover:brightness-95">+ Agregar colaborador</button>
                         </div>
                         {collaborators.length > 0 && (
                             <div className="space-y-2">
-                                {collaborators.map((c) => (
+                                {collaborators.map(c => (
                                     <div key={c.id} className="grid grid-cols-7 gap-2 items-center">
-                                        <input
-                                            type="text"
-                                            value={c.name}
-                                            onChange={(e) => handleCollaboratorChange(c.id, 'name', e.target.value)}
-                                            placeholder="Nombre"
-                                            className="col-span-2 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40"
-                                        />
-                                        <input
-                                            type="email"
-                                            value={c.email}
-                                            onChange={(e) => handleCollaboratorChange(c.id, 'email', e.target.value)}
-                                            placeholder="Email"
-                                            className="col-span-2 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40"
-                                        />
-                                        <select
-                                            value={c.mode}
-                                            onChange={(e) => handleCollaboratorChange(c.id, 'mode', e.target.value)}
-                                            className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text"
-                                        >
+                                        <input type="text" value={c.name} onChange={e => handleCollaboratorChange(c.id, 'name', e.target.value)} placeholder="Nombre" className="col-span-2 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
+                                        <input type="email" value={c.email} onChange={e => handleCollaboratorChange(c.id, 'email', e.target.value)} placeholder="Email" className="col-span-2 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
+                                        <select value={c.mode} onChange={e => handleCollaboratorChange(c.id, 'mode', e.target.value)} className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
                                             <option value="percent">%</option>
                                             <option value="module">Módulo</option>
                                         </select>
                                         {c.mode === 'module' ? (
-                                            <select
-                                                value={c.moduleId}
-                                                onChange={(e) => handleCollaboratorChange(c.id, 'moduleId', e.target.value)}
-                                                className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text"
-                                            >
+                                            <select value={c.moduleId} onChange={e => handleCollaboratorChange(c.id, 'moduleId', e.target.value)} className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
                                                 <option value="">Módulo</option>
-                                                {modules.map((m) => (
-                                                    <option key={m.id} value={String(m.id)}>{m.label || 'Sin nombre'}</option>
-                                                ))}
+                                                {modules.map(m => <option key={m.id} value={String(m.id)}>{m.label || 'Sin nombre'}</option>)}
                                             </select>
                                         ) : (
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                value={c.percent}
-                                                onChange={(e) => handleCollaboratorChange(c.id, 'percent', e.target.value)}
-                                                placeholder="%"
-                                                className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text"
-                                            />
+                                            <input type="number" min="1" value={c.percent} onChange={e => handleCollaboratorChange(c.id, 'percent', e.target.value)} placeholder="%" className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text" />
                                         )}
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveCollaborator(c.id)}
-                                            className="text-[11px] text-red-500 hover:text-red-600 font-semibold"
-                                        >
-                                            Quitar
-                                        </button>
+                                        <button type="button" onClick={() => handleRemoveCollaborator(c.id)} className="text-[11px] text-red-500 hover:text-red-600 font-semibold">Quitar</button>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
-                    <button type="submit" className="w-full bg-finance-primary hover:brightness-95 text-white font-medium p-2.5 rounded-lg transition-colors text-sm">
-                        Guardar
-                    </button>
+                    <button type="submit" className="w-full bg-finance-primary hover:brightness-95 text-white font-medium p-2.5 rounded-lg transition-colors text-sm">Guardar</button>
                 </form>
             )}
 
@@ -825,7 +598,7 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
                                     <div className="mt-1 space-y-0.5">
                                         {p.modules.map((m, idx) => (
                                             <p key={idx} className="text-[11px] text-finance-text/70">
-                                                - {m.label}: ${m.amount.toFixed(2)} x {m.multiplier ?? 1}
+                                                - {m.label}: ${Number(m.amount).toFixed(2)} x {m.multiplier ?? 1}
                                             </p>
                                         ))}
                                     </div>
@@ -845,13 +618,13 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
                                 {deleteMode && (
                                     <button
                                         type="button"
-                                        onClick={(e) => { e.stopPropagation(); onDeletePlanned(p.id); }}
+                                        onClick={e => { e.stopPropagation(); onDeletePlanned(p.id); }}
                                         className="text-xs font-semibold text-red-600 hover:text-red-700"
                                     >
                                         Quitar
                                     </button>
                                 )}
-                                <p className="font-bold text-finance-text">${p.amount.toFixed(2)}</p>
+                                <p className="font-bold text-finance-text">${parseAmount(p.amount).toFixed(2)}</p>
                             </div>
                         </button>
                     ))}
@@ -863,11 +636,7 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
             )}
 
             {isViewing && selectedPlan && (
-                <PlannedExpenseModal
-                    plan={selectedPlan}
-                    onClose={closePlan}
-                    onSave={updatePlanned}
-                />
+                <PlannedExpenseModal plan={selectedPlan} onClose={closePlan} onSave={handleUpdatePlanned} />
             )}
         </div>
     );
@@ -875,7 +644,6 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
 
 const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
     const [tab, setTab] = useState('graficas');
-
     const [draft, setDraft] = useState(() => ({
         ...plan,
         modules: Array.isArray(plan.modules) ? plan.modules : [],
@@ -890,36 +658,26 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
         });
     }, [plan]);
 
-    const moduleData = (draft.modules || []).map((m) => ({
+    const moduleData = (draft.modules || []).map(m => ({
         name: m.label || 'Sin nombre',
-        value: (Number(m.amount || 0)) * (Number(m.multiplier || 1)),
-    })).filter((d) => d.value > 0);
+        value: Number(m.amount || 0) * Number(m.multiplier || 1),
+    })).filter(d => d.value > 0);
 
     const handleSave = () => {
-        const numericModules = (draft.modules || []).map((m) => ({
+        const numericModules = (draft.modules || []).map(m => ({
             ...m,
             amount: Number(m.amount || 0),
             multiplier: Number(m.multiplier || 1),
         }));
-        const base = 0;
-        const total = numericModules.reduce((acc, m) => acc + (m.amount * m.multiplier), base) + Number(draft.amount || 0);
-
-        // Recalcular shares por si vienen en %/módulo
-        const moduleTotalsById = new Map(numericModules.map((m) => [String(m.id), m.amount * m.multiplier]));
-        const collaborators = (draft.collaborators || []).map((c) => {
+        const moduleTotalsById = new Map(numericModules.map(m => [String(m.id), m.amount * m.multiplier]));
+        const collaborators = (draft.collaborators || []).map(c => {
             const percent = Number(c.percent || 0);
             const share = c.mode === 'module'
                 ? (moduleTotalsById.get(String(c.moduleId)) || 0)
-                : (Number.isFinite(percent) ? (Number(draft.amount || 0) * (percent / 100)) : Number(c.share || 0));
+                : (Number(draft.amount || 0) * (percent / 100));
             return { ...c, percent, share };
         });
-
-        onSave({
-            ...draft,
-            modules: numericModules,
-            collaborators,
-            amount: Number(draft.amount || 0) || total,
-        });
+        onSave({ ...draft, modules: numericModules, collaborators, amount: Number(draft.amount || 0) });
     };
 
     return (
@@ -934,80 +692,51 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
                             {plan.event_date && ` • Evento: ${plan.event_date}`}
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-sm font-semibold text-finance-text/70 hover:text-finance-text">
-                        Cerrar
-                    </button>
+                    <button onClick={onClose} className="text-sm font-semibold text-finance-text/70 hover:text-finance-text">Cerrar</button>
                 </div>
 
                 <div className="p-5">
                     <div className="inline-flex bg-finance-input rounded-full p-1 text-xs font-medium border border-finance-inputBorder">
-                        <button
-                            type="button"
-                            onClick={() => setTab('graficas')}
-                            className={`px-3 py-1 rounded-full transition-colors ${tab === 'graficas' ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}
-                        >
-                            Gráficas
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setTab('detalle')}
-                            className={`px-3 py-1 rounded-full transition-colors ${tab === 'detalle' ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}
-                        >
-                            Detalle
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setTab('editar')}
-                            className={`px-3 py-1 rounded-full transition-colors ${tab === 'editar' ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}
-                        >
-                            Editar
-                        </button>
+                        {['graficas', 'detalle', 'editar'].map(t => (
+                            <button key={t} type="button" onClick={() => setTab(t)} className={`px-3 py-1 rounded-full transition-colors capitalize ${tab === t ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}>
+                                {t === 'graficas' ? 'Gráficas' : t.charAt(0).toUpperCase() + t.slice(1)}
+                            </button>
+                        ))}
                     </div>
 
                     {tab === 'graficas' && (
                         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="border border-finance-inputBorder rounded-xl p-4">
-                                <p className="text-sm font-bold text-finance-text mb-3">Módulos (Pastel)</p>
-                                {moduleData.length ? (
-                                    <div className="h-64">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={moduleData} dataKey="value" innerRadius={55} outerRadius={85} paddingAngle={2}>
-                                                    {moduleData.map((entry, index) => (
-                                                        <Cell key={`plan-pie-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip formatter={(v) => `$${Number(v).toFixed(2)}`} />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-finance-text/60">No hay módulos para graficar.</p>
-                                )}
-                            </div>
-
-                            <div className="border border-finance-inputBorder rounded-xl p-4">
-                                <p className="text-sm font-bold text-finance-text mb-3">Módulos (Barras)</p>
-                                {moduleData.length ? (
-                                    <div className="h-64">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={moduleData}>
-                                                <CartesianGrid strokeDasharray="3 3" />
-                                                <XAxis dataKey="name" />
-                                                <YAxis />
-                                                <Tooltip formatter={(v) => `$${Number(v).toFixed(2)}`} />
-                                                <Bar dataKey="value">
-                                                    {moduleData.map((entry, index) => (
-                                                        <Cell key={`plan-bar-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                    ))}
-                                                </Bar>
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-finance-text/60">No hay módulos para graficar.</p>
-                                )}
-                            </div>
+                            {['pie', 'bar'].map(chartType => (
+                                <div key={chartType} className="border border-finance-inputBorder rounded-xl p-4">
+                                    <p className="text-sm font-bold text-finance-text mb-3">Módulos ({chartType === 'pie' ? 'Pastel' : 'Barras'})</p>
+                                    {moduleData.length ? (
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                {chartType === 'pie' ? (
+                                                    <PieChart>
+                                                        <Pie data={moduleData} dataKey="value" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                                                            {moduleData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                                                        </Pie>
+                                                        <Tooltip formatter={v => `$${Number(v).toFixed(2)}`} />
+                                                    </PieChart>
+                                                ) : (
+                                                    <BarChart data={moduleData}>
+                                                        <CartesianGrid strokeDasharray="3 3" />
+                                                        <XAxis dataKey="name" />
+                                                        <YAxis />
+                                                        <Tooltip formatter={v => `$${Number(v).toFixed(2)}`} />
+                                                        <Bar dataKey="value">
+                                                            {moduleData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                                                        </Bar>
+                                                    </BarChart>
+                                                )}
+                                            </ResponsiveContainer>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-finance-text/60">No hay módulos para graficar.</p>
+                                    )}
+                                </div>
+                            ))}
                         </div>
                     )}
 
@@ -1035,55 +764,27 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-medium text-finance-text mb-1">Descripción</label>
-                                    <input
-                                        value={draft.description || ''}
-                                        onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                                        className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text"
-                                    />
+                                    <input value={draft.description || ''} onChange={e => setDraft(d => ({ ...d, description: e.target.value }))} className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-finance-text mb-1">Monto total ($)</label>
-                                    <input
-                                        value={String(draft.amount ?? '')}
-                                        onChange={(e) => setDraft((d) => ({ ...d, amount: parseAmount(e.target.value) }))}
-                                        className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text"
-                                    />
+                                    <input value={String(draft.amount ?? '')} onChange={e => setDraft(d => ({ ...d, amount: parseAmount(e.target.value) }))} className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-finance-text mb-1">Fecha (creación)</label>
-                                    <input
-                                        type="date"
-                                        value={draft.date || ''}
-                                        onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))}
-                                        className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text"
-                                    />
+                                    <input type="date" value={draft.date || ''} onChange={e => setDraft(d => ({ ...d, date: e.target.value }))} className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-finance-text mb-1">Fecha límite</label>
-                                    <input
-                                        type="date"
-                                        value={draft.deadline_date || ''}
-                                        onChange={(e) => setDraft((d) => ({ ...d, deadline_date: e.target.value }))}
-                                        className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text"
-                                    />
+                                    <input type="date" value={draft.deadline_date || ''} onChange={e => setDraft(d => ({ ...d, deadline_date: e.target.value }))} className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-finance-text mb-1">Fecha del evento</label>
-                                    <input
-                                        type="date"
-                                        value={draft.event_date || ''}
-                                        onChange={(e) => setDraft((d) => ({ ...d, event_date: e.target.value }))}
-                                        className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text"
-                                    />
+                                    <input type="date" value={draft.event_date || ''} onChange={e => setDraft(d => ({ ...d, event_date: e.target.value }))} className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text" />
                                 </div>
                             </div>
-
                             <div className="flex justify-end gap-2">
-                                <button
-                                    type="button"
-                                    onClick={handleSave}
-                                    className="bg-finance-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:brightness-95"
-                                >
+                                <button type="button" onClick={handleSave} className="bg-finance-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:brightness-95">
                                     Guardar cambios
                                 </button>
                             </div>
