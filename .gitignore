@@ -13,6 +13,7 @@ node_modules/
 # Build output
 dist/
 build/
+frontend/dist/
 
 # Logs
 *.log
@@ -21,3 +22,6 @@ npm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Firebase (migrated to Vercel)
+.firebase/

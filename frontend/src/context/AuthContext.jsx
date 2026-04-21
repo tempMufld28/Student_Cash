@@ -61,8 +61,8 @@ export const AuthProvider = ({ children }) => {
     };
 
     const register = async (name, email, password) => {
-        const redirectUrl = import.meta.env.DEV 
-            ? 'http://localhost:5173/auth' 
+        const redirectUrl = import.meta.env.DEV
+            ? `${window.location.origin}/auth`
             : 'https://student-cash.vercel.app/auth';
     
         const { data, error } = await supabase.auth.signUp({
