@@ -61,17 +61,21 @@ export const AuthProvider = ({ children }) => {
     };
 
     const register = async (name, email, password) => {
-    const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { 
-            data: { name },
-            emailRedirectTo: 'https://student-cash.vercel.app/auth' // ← AÑADE ESTO
-        },
-    });
-    if (error) throw error;
-    return data;
-};
+        const redirectUrl = import.meta.env.DEV 
+            ? 'http://localhost:5173/auth' 
+            : 'https://student-cash.vercel.app/auth';
+    
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { 
+                data: { name },
+                emailRedirectTo: redirectUrl
+            },
+        });
+        if (error) throw error;
+        return data;
+    };
 
     const loginAsGuest = () => {
         localStorage.setItem('student_cash_guest', 'true');
