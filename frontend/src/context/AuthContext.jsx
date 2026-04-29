@@ -7,17 +7,9 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [isGuest, setIsGuest] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        if (localStorage.getItem('student_cash_guest') === 'true') {
-            setIsGuest(true);
-            setUser({ name: 'Invitado', email: '' });
-            setIsLoading(false);
-            return;
-        }
-
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user) {
                 loadProfile(session.user);
@@ -29,7 +21,7 @@ export const AuthProvider = ({ children }) => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.user) {
                 loadProfile(session.user);
-            } else if (!localStorage.getItem('student_cash_guest')) {
+            } else {
                 setUser(null);
                 setIsLoading(false);
             }
@@ -77,27 +69,18 @@ export const AuthProvider = ({ children }) => {
         return data;
     };
 
-    const loginAsGuest = () => {
-        localStorage.setItem('student_cash_guest', 'true');
-        setIsGuest(true);
-        setUser({ name: 'Invitado', email: '' });
-    };
-
     const logout = async () => {
-        localStorage.removeItem('student_cash_guest');
-        setIsGuest(false);
         setUser(null);
-        if (!isGuest) await supabase.auth.signOut();
+        await supabase.auth.signOut();
     };
 
     const updateUser = async ({ name, gender, avatar }) => {
-        if (isGuest) return;
         await supabase.from('profiles').update({ name, gender, avatar }).eq('id', user.id);
         setUser(prev => ({ ...prev, name, gender, avatar }));
     };
 
     return (
-        <AuthContext.Provider value={{ user, isGuest, isLoading, login, register, loginAsGuest, logout, updateUser }}>
+        <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
             {!isLoading && children}
         </AuthContext.Provider>
     );

@@ -47,7 +47,7 @@ const PasswordField = ({ value, onChange, placeholder, id }) => {
 };
 
 const AccountDropdown = ({ onClose }) => {
-    const { user, isGuest, logout, updateUser } = useAuth();
+    const { user, logout, updateUser } = useAuth();
     const navigate = useNavigate();
 
     const [name, setName] = useState(user?.name || '');
@@ -156,25 +156,22 @@ const AccountDropdown = ({ onClose }) => {
                                 <span className="text-3xl font-bold text-finance-primary">{initials}</span>
                             )}
                         </div>
-                        {!isGuest && (
-                            <button
+                        <button
                                 onClick={() => fileInputRef.current?.click()}
                                 className="absolute bottom-0 right-0 w-7 h-7 bg-finance-primary rounded-full flex items-center justify-center shadow-md hover:brightness-95 transition-all"
                                 title="Cambiar foto"
                             >
                                 <Camera size={13} className="text-white" />
                             </button>
-                        )}
                         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
                     </div>
                     <p className="font-bold text-finance-text text-sm">{user?.name}</p>
-                    {isGuest && <span className="text-xs text-finance-text/50 bg-finance-input px-2 py-0.5 rounded-full border border-finance-inputBorder">Modo Invitado</span>}
                 </div>
 
                 <div className="space-y-3">
                     <div>
                         <label className="block text-xs font-semibold text-finance-text mb-1">Nombre</label>
-                        <input value={name} onChange={e => setName(e.target.value)} disabled={isGuest} className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all" />
+                        <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary transition-all" />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-finance-text mb-1">Correo Electrónico</label>
@@ -185,7 +182,7 @@ const AccountDropdown = ({ onClose }) => {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-finance-text mb-1">Género</label>
-                        <select value={gender} onChange={e => setGender(e.target.value)} disabled={isGuest} className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                        <select value={gender} onChange={e => setGender(e.target.value)} className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary transition-all">
                             <option value="">Selecciona tu género</option>
                             <option value="Mujer">Mujer</option>
                             <option value="Hombre">Hombre</option>
@@ -196,7 +193,7 @@ const AccountDropdown = ({ onClose }) => {
                     {profileMsg && <p className="text-xs text-green-600 font-medium bg-green-50 border border-green-200 rounded-lg p-2">{profileMsg}</p>}
                     {profileError && <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-200 rounded-lg p-2">{profileError}</p>}
 
-                    <button onClick={handleSaveProfile} disabled={isGuest || savingProfile} className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                    <button onClick={handleSaveProfile} disabled={savingProfile} className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                         {savingProfile ? 'Guardando...' : 'Guardar Cambios'}
                     </button>
                 </div>
@@ -214,7 +211,7 @@ const AccountDropdown = ({ onClose }) => {
                     {pwMsg && <p className="text-xs text-green-600 font-medium bg-green-50 border border-green-200 rounded-lg p-2">{pwMsg}</p>}
                     {pwError && <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-200 rounded-lg p-2">{pwError}</p>}
 
-                    <button onClick={handleChangePassword} disabled={isGuest || changingPw} className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                    <button onClick={handleChangePassword} disabled={changingPw} className="w-full bg-finance-primary hover:brightness-95 text-white font-semibold py-2.5 rounded-xl transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                         {changingPw ? 'Actualizando...' : 'Actualizar Contraseña'}
                     </button>
                 </div>
@@ -225,8 +222,7 @@ const AccountDropdown = ({ onClose }) => {
                     <LogOut size={15} /> Cerrar Sesión
                 </button>
 
-                {!isGuest && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
                         <h3 className="text-xs font-bold text-red-600 flex items-center gap-1.5">
                             <AlertTriangle size={13} /> Zona Peligrosa
                         </h3>
@@ -246,7 +242,6 @@ const AccountDropdown = ({ onClose }) => {
                             <Trash2 size={14} /> {deleting ? 'Borrando...' : 'Borrar Cuenta'}
                         </button>
                     </div>
-                )}
             </div>
         </div>
     );
@@ -254,7 +249,7 @@ const AccountDropdown = ({ onClose }) => {
 
 const Layout = () => {
     const navigate = useNavigate();
-    const { user, isGuest } = useAuth();
+    const { user } = useAuth();
     const { isDark, toggleTheme } = useTheme();
     const [deleteMode, setDeleteMode] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -281,12 +276,6 @@ const Layout = () => {
                 <h1 className="text-xl md:text-2xl font-bold text-finance-text tracking-tight">Student-Cash</h1>
 
                 <div className="flex items-center gap-3">
-                    {isGuest && (
-                        <span className="bg-finance-input text-finance-text/80 px-2.5 py-1 rounded-md text-xs font-semibold border border-finance-inputBorder">
-                            Modo Invitado
-                        </span>
-                    )}
-
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setShowDropdown(s => !s)}

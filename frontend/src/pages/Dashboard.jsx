@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 
 const CATEGORIES = [
     'Alimentación', 'Transporte', 'Entretenimiento', 'Educación',
-    'Salud', 'Ropa', 'Vivienda', 'Servicios', 'Otros'
+    'Salud', 'Ropa', 'Belleza', 'Vivienda', 'Servicios', 'Otros'
 ];
 
 const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#64748b'];
@@ -19,6 +19,7 @@ const CATEGORY_CONFIG = {
     'Educación':       { color: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-400' },
     'Salud':           { color: 'bg-green-100 text-green-700', dot: 'bg-green-400' },
     'Ropa':            { color: 'bg-pink-100 text-pink-700', dot: 'bg-pink-400' },
+    'Belleza':         { color: 'bg-pink-100 text-pink-700', dot: 'bg-pink-400' },
     'Vivienda':        { color: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-400' },
     'Servicios':       { color: 'bg-cyan-100 text-cyan-700', dot: 'bg-cyan-400' },
     'Otros':           { color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
@@ -58,22 +59,18 @@ const Dashboard = () => {
     const [activeTab, setActiveTab] = useState('resumen');
     const [transactions, setTransactions] = useState([]);
     const [plannedExpenses, setPlannedExpenses] = useState([]);
-    const { user, isGuest } = useAuth();
+    const [addToPlanModal, setAddToPlanModal] = useState(null);
+    const { user } = useAuth();
     const { deleteMode } = useOutletContext() || {};
 
     useEffect(() => {
-        if (isGuest) {
-            setTransactions(JSON.parse(localStorage.getItem('student_cash_transactions') || '[]'));
-            setPlannedExpenses(JSON.parse(localStorage.getItem('student_cash_planned') || '[]'));
-        } else if (user?.id) {
-            fetchData();
-        }
-    }, [user?.id, isGuest]);
+        if (user?.id) fetchData();
+    }, [user?.id]);
 
     const fetchData = async () => {
         const [transRes, planRes] = await Promise.all([
             supabase.from('transactions').select('*').order('date', { ascending: false }),
-            supabase.from('planned_expenses').select('*').order('date', { ascending: true }),
+            supabase.from('planned_expenses').select('*, plan_members(*)').order('date', { ascending: true }),
         ]);
 
         if (!transRes.error) setTransactions(transRes.data);
@@ -81,12 +78,6 @@ const Dashboard = () => {
     };
 
     const saveTransaction = async (newTx) => {
-        if (isGuest) {
-            const updated = [...transactions, { ...newTx, id: Date.now() }];
-            setTransactions(updated);
-            localStorage.setItem('student_cash_transactions', JSON.stringify(updated));
-            return;
-        }
         const { data, error } = await supabase
             .from('transactions')
             .insert({ ...newTx, user_id: user.id })
@@ -96,58 +87,65 @@ const Dashboard = () => {
     };
 
     const savePlanned = async (newPlan) => {
-        if (isGuest) {
-            const updated = [...plannedExpenses, { ...newPlan, id: Date.now() }];
-            setPlannedExpenses(updated);
-            localStorage.setItem('student_cash_planned', JSON.stringify(updated));
-            return;
-        }
         const { data, error } = await supabase
             .from('planned_expenses')
             .insert({ ...newPlan, user_id: user.id })
-            .select()
+            .select('*, plan_members(*)')
             .single();
         if (!error) setPlannedExpenses(prev => [...prev, data]);
     };
 
     const deleteTransaction = async (id) => {
-        if (isGuest) {
-            const updated = transactions.filter(t => t.id !== id);
-            setTransactions(updated);
-            localStorage.setItem('student_cash_transactions', JSON.stringify(updated));
-            return;
-        }
         const { error } = await supabase.from('transactions').delete().eq('id', id);
         if (!error) setTransactions(prev => prev.filter(t => t.id !== id));
     };
 
     const deletePlanned = async (id) => {
-        if (isGuest) {
-            const updated = plannedExpenses.filter(p => p.id !== id);
-            setPlannedExpenses(updated);
-            localStorage.setItem('student_cash_planned', JSON.stringify(updated));
-            return;
-        }
         const { error } = await supabase.from('planned_expenses').delete().eq('id', id);
         if (!error) setPlannedExpenses(prev => prev.filter(p => p.id !== id));
     };
 
     const updatePlanned = async (updated) => {
-        if (isGuest) {
-            const list = plannedExpenses.map(p => p.id === updated.id ? updated : p);
-            setPlannedExpenses(list);
-            localStorage.setItem('student_cash_planned', JSON.stringify(list));
-            return;
-        }
-        const { id, user_id: _uid, created_at: _ca, ...fields } = updated;
+        const { id, user_id: _uid, created_at: _ca, plan_members: _pm, ...fields } = updated;
         const { data, error } = await supabase
             .from('planned_expenses')
             .update(fields)
             .eq('id', id)
-            .select()
+            .select('*, plan_members(*)')
             .single();
         if (!error) setPlannedExpenses(prev => prev.map(p => p.id === id ? data : p));
         return error ? null : data;
+    };
+
+    const handleAddCollaborator = async (planId, email) => {
+        const { data: userId, error: rpcErr } = await supabase.rpc('get_user_id_by_email', { lookup_email: email });
+        if (rpcErr || !userId) return { error: 'El correo no está registrado en Student-Cash' };
+        const { error } = await supabase.from('plan_members').insert({
+            plan_id: planId,
+            invited_by: user.id,
+            member_email: email,
+            member_id: userId,
+            role: 'editor',
+            status: 'accepted',
+        });
+        if (!error) fetchData();
+        return { error: error?.message || null };
+    };
+
+    const handleRemoveCollaborator = async (memberId) => {
+        const { error } = await supabase.from('plan_members').delete().eq('id', memberId);
+        if (!error) fetchData();
+    };
+
+    const handleAddTransactionToPlan = async (transaction, planId) => {
+        const plan = plannedExpenses.find(p => p.id === planId);
+        if (!plan) return;
+        const newModule = { label: transaction.description, amount: transaction.amount, multiplier: 1 };
+        const { error } = await supabase
+            .from('planned_expenses')
+            .update({ modules: [...(plan.modules || []), newModule] })
+            .eq('id', planId);
+        if (!error) { setAddToPlanModal(null); fetchData(); }
     };
 
     return (
@@ -178,17 +176,32 @@ const Dashboard = () => {
             {activeTab === 'resumen' ? (
                 <ResumenTab
                     transactions={transactions}
+                    plannedExpenses={plannedExpenses}
                     onAddTransaction={saveTransaction}
                     onDeleteTransaction={deleteTransaction}
                     deleteMode={deleteMode}
+                    onOpenAddToPlan={(tx) => setAddToPlanModal(tx)}
                 />
             ) : (
                 <PlanificacionTab
                     plannedExpenses={plannedExpenses}
+                    currentUserId={user?.id}
                     onAddPlanned={savePlanned}
                     onDeletePlanned={deletePlanned}
                     onUpdatePlanned={updatePlanned}
+                    onAddCollaborator={handleAddCollaborator}
+                    onRemoveCollaborator={handleRemoveCollaborator}
                     deleteMode={deleteMode}
+                />
+            )}
+
+            {addToPlanModal && (
+                <AddToPlanModal
+                    transaction={addToPlanModal}
+                    plans={plannedExpenses}
+                    currentUserId={user?.id}
+                    onConfirm={handleAddTransactionToPlan}
+                    onClose={() => setAddToPlanModal(null)}
                 />
             )}
         </div>
@@ -197,7 +210,7 @@ const Dashboard = () => {
 
 // --- Subcomponents ---
 
-const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, deleteMode }) => {
+const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteTransaction, deleteMode, onOpenAddToPlan }) => {
     const [type, setType] = useState('Gasto');
     const [desc, setDesc] = useState('');
     const [amount, setAmount] = useState('');
@@ -261,7 +274,7 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-finance-text mb-1.5">Descripción</label>
-                            <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ej: Compra de supermercado" className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-3 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" required />
+                            <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder={type === 'Ingreso' ? 'Ej: Beca' : 'Ej: Compra de supermercado'} className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-3 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" required />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-finance-text mb-1.5">Monto ($)</label>
@@ -398,6 +411,14 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => onOpenAddToPlan(t)}
+                                            className="text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded px-2 py-0.5"
+                                            title="Agregar como módulo a un plan"
+                                        >
+                                            + Plan
+                                        </button>
                                         {deleteMode && (
                                             <button
                                                 type="button"
@@ -423,7 +444,7 @@ const ResumenTab = ({ transactions, onAddTransaction, onDeleteTransaction, delet
     );
 };
 
-const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUpdatePlanned, deleteMode }) => {
+const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDeletePlanned, onUpdatePlanned, onAddCollaborator, onRemoveCollaborator, deleteMode }) => {
     const [desc, setDesc] = useState('');
     const [baseAmount, setBaseAmount] = useState('');
     const [modules, setModules] = useState([]);
@@ -636,19 +657,34 @@ const PlanificacionTab = ({ plannedExpenses, onAddPlanned, onDeletePlanned, onUp
             )}
 
             {isViewing && selectedPlan && (
-                <PlannedExpenseModal plan={selectedPlan} onClose={closePlan} onSave={handleUpdatePlanned} />
+                <PlannedExpenseModal
+                    plan={selectedPlan}
+                    currentUserId={currentUserId}
+                    onClose={closePlan}
+                    onSave={handleUpdatePlanned}
+                    onAddCollaborator={onAddCollaborator}
+                    onRemoveCollaborator={onRemoveCollaborator}
+                />
             )}
         </div>
     );
 };
 
-const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
+const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollaborator, onRemoveCollaborator }) => {
     const [tab, setTab] = useState('graficas');
+    const [collabEmail, setCollabEmail] = useState('');
+    const [collabError, setCollabError] = useState('');
+    const [collabLoading, setCollabLoading] = useState(false);
     const [draft, setDraft] = useState(() => ({
         ...plan,
         modules: Array.isArray(plan.modules) ? plan.modules : [],
         collaborators: Array.isArray(plan.collaborators) ? plan.collaborators : [],
     }));
+
+    const isMember =
+        plan.user_id === currentUserId ||
+        (plan.plan_members || []).some(m => m.member_id === currentUserId && m.status === 'accepted');
+    const isOwner = plan.user_id === currentUserId;
 
     useEffect(() => {
         setDraft({
@@ -680,6 +716,15 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
         onSave({ ...draft, modules: numericModules, collaborators, amount: Number(draft.amount || 0) });
     };
 
+    const handleAddCollab = async () => {
+        if (!collabEmail.trim()) return;
+        setCollabLoading(true); setCollabError('');
+        const result = await onAddCollaborator(plan.id, collabEmail.trim());
+        setCollabLoading(false);
+        if (result?.error) setCollabError(result.error);
+        else setCollabEmail('');
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="w-full max-w-3xl bg-finance-card rounded-2xl shadow-xl border border-finance-inputBorder overflow-hidden">
@@ -696,13 +741,18 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
                 </div>
 
                 <div className="p-5">
-                    <div className="inline-flex bg-finance-input rounded-full p-1 text-xs font-medium border border-finance-inputBorder">
-                        {['graficas', 'detalle', 'editar'].map(t => (
-                            <button key={t} type="button" onClick={() => setTab(t)} className={`px-3 py-1 rounded-full transition-colors capitalize ${tab === t ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}>
-                                {t === 'graficas' ? 'Gráficas' : t.charAt(0).toUpperCase() + t.slice(1)}
-                            </button>
-                        ))}
-                    </div>
+                    {(() => {
+                        const tabs = isMember ? ['graficas', 'detalle', 'editar', 'compartir'] : ['graficas', 'detalle'];
+                        return (
+                            <div className="inline-flex bg-finance-input rounded-full p-1 text-xs font-medium border border-finance-inputBorder">
+                                {tabs.map(t => (
+                                    <button key={t} type="button" onClick={() => setTab(t)} className={`px-3 py-1 rounded-full transition-colors capitalize ${tab === t ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}>
+                                        {t === 'graficas' ? 'Gráficas' : t === 'compartir' ? 'Compartir' : t.charAt(0).toUpperCase() + t.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                        );
+                    })()}
 
                     {tab === 'graficas' && (
                         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -759,7 +809,7 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
                         </div>
                     )}
 
-                    {tab === 'editar' && (
+                    {tab === 'editar' && isMember && (
                         <div className="mt-5 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
@@ -790,6 +840,55 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
                             </div>
                         </div>
                     )}
+
+                    {tab === 'compartir' && (
+                        <div className="mt-5 space-y-4">
+                            <p className="text-sm font-bold text-finance-text">Colaboradores del plan</p>
+                            {(plan.plan_members || []).length === 0 && (
+                                <p className="text-xs text-finance-text/60">Sin colaboradores aún.</p>
+                            )}
+                            {(plan.plan_members || []).map(m => (
+                                <div key={m.id} className="flex items-center justify-between p-3 bg-finance-input border border-finance-inputBorder rounded-xl">
+                                    <div>
+                                        <p className="text-xs font-semibold text-finance-text">{m.member_email}</p>
+                                        <p className="text-[10px] text-finance-text/60">{m.role} • {m.status}</p>
+                                    </div>
+                                    {isOwner && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onRemoveCollaborator(m.id)}
+                                            className="text-[11px] text-red-500 hover:text-red-700 font-semibold"
+                                        >
+                                            Quitar
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                            {isOwner && (
+                                <div className="space-y-2">
+                                    <p className="text-xs font-semibold text-finance-text">Agregar colaborador por correo</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="email"
+                                            value={collabEmail}
+                                            onChange={e => { setCollabEmail(e.target.value); setCollabError(''); }}
+                                            placeholder="correo@ejemplo.com"
+                                            className="flex-1 bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text placeholder:text-finance-text/40"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddCollab}
+                                            disabled={collabLoading}
+                                            className="bg-finance-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:brightness-95 disabled:opacity-50"
+                                        >
+                                            {collabLoading ? '...' : 'Agregar'}
+                                        </button>
+                                    </div>
+                                    {collabError && <p className="text-xs text-red-500 font-medium">{collabError}</p>}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -797,3 +896,51 @@ const PlannedExpenseModal = ({ plan, onClose, onSave }) => {
 };
 
 export default Dashboard;
+
+const AddToPlanModal = ({ transaction, plans, currentUserId, onConfirm, onClose }) => {
+    const [selectedPlanId, setSelectedPlanId] = useState('');
+    const eligiblePlans = plans.filter(p =>
+        p.user_id === currentUserId ||
+        (p.plan_members || []).some(m => m.member_id === currentUserId && m.status === 'accepted')
+    );
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-sm bg-finance-card rounded-2xl shadow-xl border border-finance-inputBorder overflow-hidden">
+                <div className="p-5 border-b border-finance-inputBorder flex justify-between items-center">
+                    <h3 className="text-base font-bold text-finance-text">Agregar a un Plan</h3>
+                    <button onClick={onClose} className="text-sm font-semibold text-finance-text/70 hover:text-finance-text">Cerrar</button>
+                </div>
+                <div className="p-5 space-y-4">
+                    <p className="text-xs text-finance-text/70">
+                        Transacción: <span className="font-semibold text-finance-text">{transaction.description}</span> — ${parseFloat(transaction.amount).toFixed(2)}
+                    </p>
+                    {eligiblePlans.length === 0 ? (
+                        <p className="text-xs text-finance-text/50">No tienes planes aún.</p>
+                    ) : (
+                        <select
+                            value={selectedPlanId}
+                            onChange={e => setSelectedPlanId(e.target.value)}
+                            className="w-full bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm text-finance-text outline-none focus:ring-2 focus:ring-finance-primary/40"
+                        >
+                            <option value="" disabled>Selecciona un plan</option>
+                            {eligiblePlans.map(p => (
+                                <option key={p.id} value={p.id}>
+                                    {p.description} — ${parseFloat(p.amount).toFixed(2)}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    <button
+                        type="button"
+                        disabled={!selectedPlanId}
+                        onClick={() => onConfirm(transaction, Number(selectedPlanId))}
+                        className="w-full bg-finance-primary text-white font-semibold py-2.5 rounded-xl text-sm hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                        Agregar al plan
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};

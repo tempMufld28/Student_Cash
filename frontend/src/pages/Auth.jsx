@@ -39,7 +39,7 @@ const Auth = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const navigate = useNavigate();
-    const { login, register, loginAsGuest } = useAuth();
+    const { login, register } = useAuth();
 
     const handleInputChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -80,11 +80,6 @@ const Auth = () => {
         } finally {
             setIsSubmitting(false);
         }
-    };
-
-    const handleGuestMode = () => {
-        loginAsGuest();
-        navigate('/');
     };
 
     return (
@@ -179,23 +174,6 @@ const Auth = () => {
                     </form>
                 </div>
             </div>
-
-            <div className="w-full max-w-md mt-8 flex items-center justify-center space-x-4">
-                <div className="h-px bg-finance-inputBorder/60 flex-1"></div>
-                <span className="text-xs font-semibold text-finance-text/50 tracking-wider">O CONTINÚA COMO</span>
-                <div className="h-px bg-finance-inputBorder/60 flex-1"></div>
-            </div>
-
-            <button
-                onClick={handleGuestMode}
-                className="w-full max-w-md bg-finance-card border border-finance-inputBorder hover:bg-finance-input text-finance-text font-semibold py-3 rounded-xl transition-colors mt-6 shadow-sm"
-            >
-                Modo Invitado (Sin registro)
-            </button>
-
-            <p className="w-full max-w-md text-center text-xs font-medium text-finance-text/50 mt-4">
-                En modo invitado tus datos se guardan solo en este navegador
-            </p>
 
             <button
                 onClick={toggleTheme}
