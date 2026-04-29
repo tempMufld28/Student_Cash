@@ -675,6 +675,9 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
     const [collabEmail, setCollabEmail] = useState('');
     const [collabError, setCollabError] = useState('');
     const [collabLoading, setCollabLoading] = useState(false);
+    const [emailSuggestions, setEmailSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const searchTimeout = React.useRef(null);
     const [draft, setDraft] = useState(() => ({
         ...plan,
         modules: Array.isArray(plan.modules) ? plan.modules : [],
@@ -722,7 +725,30 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
         const result = await onAddCollaborator(plan.id, collabEmail.trim());
         setCollabLoading(false);
         if (result?.error) setCollabError(result.error);
-        else setCollabEmail('');
+        else { setCollabEmail(''); setEmailSuggestions([]); setShowSuggestions(false); }
+    };
+
+    const handleEmailChange = (value) => {
+        setCollabEmail(value);
+        setCollabError('');
+        clearTimeout(searchTimeout.current);
+        if (value.length < 2) { setEmailSuggestions([]); setShowSuggestions(false); return; }
+        searchTimeout.current = setTimeout(async () => {
+            const { data } = await supabase.rpc('search_users_by_email', { query: value });
+            if (data && data.length > 0) {
+                setEmailSuggestions(data.map(r => r.email));
+                setShowSuggestions(true);
+            } else {
+                setEmailSuggestions([]);
+                setShowSuggestions(false);
+            }
+        }, 300);
+    };
+
+    const selectSuggestion = (email) => {
+        setCollabEmail(email);
+        setEmailSuggestions([]);
+        setShowSuggestions(false);
     };
 
     return (
@@ -867,22 +893,39 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
                             {isOwner && (
                                 <div className="space-y-2">
                                     <p className="text-xs font-semibold text-finance-text">Agregar colaborador por correo</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="email"
-                                            value={collabEmail}
-                                            onChange={e => { setCollabEmail(e.target.value); setCollabError(''); }}
-                                            placeholder="correo@ejemplo.com"
-                                            className="flex-1 bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text placeholder:text-finance-text/40"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={handleAddCollab}
-                                            disabled={collabLoading}
-                                            className="bg-finance-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:brightness-95 disabled:opacity-50"
-                                        >
-                                            {collabLoading ? '...' : 'Agregar'}
-                                        </button>
+                                    <div className="relative">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="email"
+                                                value={collabEmail}
+                                                onChange={e => handleEmailChange(e.target.value)}
+                                                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                                                onFocus={() => emailSuggestions.length > 0 && setShowSuggestions(true)}
+                                                placeholder="correo@ejemplo.com"
+                                                className="flex-1 bg-finance-input border border-finance-inputBorder rounded-lg p-2.5 text-sm outline-none text-finance-text placeholder:text-finance-text/40 focus:ring-2 focus:ring-finance-primary/40"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddCollab}
+                                                disabled={collabLoading}
+                                                className="bg-finance-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:brightness-95 disabled:opacity-50"
+                                            >
+                                                {collabLoading ? '...' : 'Agregar'}
+                                            </button>
+                                        </div>
+                                        {showSuggestions && emailSuggestions.length > 0 && (
+                                            <ul className="absolute z-20 left-0 right-[88px] mt-1 bg-finance-card border border-finance-inputBorder rounded-xl shadow-lg overflow-hidden">
+                                                {emailSuggestions.map(s => (
+                                                    <li
+                                                        key={s}
+                                                        onMouseDown={() => selectSuggestion(s)}
+                                                        className="px-3 py-2 text-sm text-finance-text hover:bg-finance-primary hover:text-white cursor-pointer transition-colors"
+                                                    >
+                                                        {s}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
                                     </div>
                                     {collabError && <p className="text-xs text-red-500 font-medium">{collabError}</p>}
                                 </div>
