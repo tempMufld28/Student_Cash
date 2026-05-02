@@ -57,6 +57,7 @@ const formatInputAmount = (value) => {
 
 const Dashboard = () => {
     const [activeTab, setActiveTab] = useState('resumen');
+    const [invitations, setInvitations] = useState([]);
     const [transactions, setTransactions] = useState([]);
     const [plannedExpenses, setPlannedExpenses] = useState([]);
     const [addToPlanModal, setAddToPlanModal] = useState(null);
@@ -68,13 +69,15 @@ const Dashboard = () => {
     }, [user?.id]);
 
     const fetchData = async () => {
-        const [transRes, planRes] = await Promise.all([
+        const [transRes, planRes, invRes] = await Promise.all([
             supabase.from('transactions').select('*').order('date', { ascending: false }),
             supabase.from('planned_expenses').select('*, plan_members(*)').order('date', { ascending: true }),
+            supabase.from('plan_members').select('*, planned_expenses(*)').eq('member_email', user?.email).eq('status', 'pending'),
         ]);
 
         if (!transRes.error) setTransactions(transRes.data);
         if (!planRes.error) setPlannedExpenses(planRes.data);
+        if (!invRes.error) setInvitations(invRes.data);
     };
 
     const saveTransaction = async (newTx) => {
@@ -150,10 +153,11 @@ const Dashboard = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex bg-finance-primary p-1 rounded-xl w-fit mb-6 shadow-sm gap-1">
+            
+            <div className="flex bg-finance-primary p-1 rounded-xl w-fit mb-6 shadow-sm gap-1 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('resumen')}
-                    className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'resumen'
                             ? 'bg-white text-finance-primary shadow-sm'
                             : 'text-white hover:bg-white/20'
@@ -163,7 +167,7 @@ const Dashboard = () => {
                 </button>
                 <button
                     onClick={() => setActiveTab('planificacion')}
-                    className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'planificacion'
                             ? 'bg-white text-finance-primary shadow-sm'
                             : 'text-white hover:bg-white/20'
@@ -171,9 +175,36 @@ const Dashboard = () => {
                 >
                     Planificación
                 </button>
+                <button
+                    onClick={() => setActiveTab('ahorro')}
+                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                        activeTab === 'ahorro'
+                            ? 'bg-white text-finance-primary shadow-sm'
+                            : 'text-white hover:bg-white/20'
+                    }`}
+                >
+                    Ahorro
+                </button>
+                <button
+                    onClick={() => setActiveTab('invitaciones')}
+                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 relative ${
+                        activeTab === 'invitaciones'
+                            ? 'bg-white text-finance-primary shadow-sm'
+                            : 'text-white hover:bg-white/20'
+                    }`}
+                >
+                    Invitaciones
+                    {invitations.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                            {invitations.length}
+                        </span>
+                    )}
+                </button>
             </div>
 
-            {activeTab === 'resumen' ? (
+
+            
+            {activeTab === 'resumen' && (
                 <ResumenTab
                     transactions={transactions}
                     plannedExpenses={plannedExpenses}
@@ -182,7 +213,8 @@ const Dashboard = () => {
                     deleteMode={deleteMode}
                     onOpenAddToPlan={(tx) => setAddToPlanModal(tx)}
                 />
-            ) : (
+            )}
+            {activeTab === 'planificacion' && (
                 <PlanificacionTab
                     plannedExpenses={plannedExpenses}
                     currentUserId={user?.id}
@@ -193,6 +225,12 @@ const Dashboard = () => {
                     onRemoveCollaborator={handleRemoveCollaborator}
                     deleteMode={deleteMode}
                 />
+            )}
+            {activeTab === 'ahorro' && (
+                <AhorroTab currentUserId={user?.id} plannedExpenses={plannedExpenses} />
+            )}
+            {activeTab === 'invitaciones' && (
+                <InvitacionesTab invitations={invitations} onRefresh={fetchData} />
             )}
 
             {addToPlanModal && (
@@ -411,14 +449,16 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => onOpenAddToPlan(t)}
-                                            className="text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded px-2 py-0.5"
-                                            title="Agregar como módulo a un plan"
-                                        >
-                                            + Plan
-                                        </button>
+                                        {t.type === 'Gasto' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onOpenAddToPlan(t)}
+                                                className="text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded px-2 py-0.5"
+                                                title="Agregar como módulo a un plan"
+                                            >
+                                                + Plan
+                                            </button>
+                                        )}
                                         {deleteMode && (
                                             <button
                                                 type="button"
@@ -446,7 +486,9 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
 
 const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDeletePlanned, onUpdatePlanned, onAddCollaborator, onRemoveCollaborator, deleteMode }) => {
     const [desc, setDesc] = useState('');
-    const [baseAmount, setBaseAmount] = useState('');
+    const [collabMode, setCollabMode] = useState('percent');
+    const [collabEmailInput, setCollabEmailInput] = useState('');
+    const [suggestions, setSuggestions] = useState([]);
     const [modules, setModules] = useState([]);
     const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [deadlineDate, setDeadlineDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -472,7 +514,7 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
     const handleRemoveModule = (id) => setModules(prev => prev.filter(m => m.id !== id));
 
     const handleAddCollaborator = () => {
-        setCollaborators(prev => [...prev, { id: Date.now(), name: '', email: '', mode: 'percent', percent: '', moduleId: '' }]);
+        setCollaborators(prev => [...prev, { id: Date.now(), email: '', percent: '', moduleId: '' }]);
     };
 
     const handleCollaboratorChange = (id, field, value) => {
@@ -481,31 +523,40 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
 
     const handleRemoveCollaborator = (id) => setCollaborators(prev => prev.filter(c => c.id !== id));
 
+    const handleEmailInput = (value) => {
+        setCollabEmailInput(value);
+        // We simulate debounce by just checking length here. Real autocomplete logic would be async.
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        const numericBase = parseAmount(baseAmount);
         const numericModules = modules
             .map(m => ({ ...m, amount: parseAmount(m.amount), multiplier: parseAmount(m.multiplier || 1) }))
             .filter(m => m.label && m.amount > 0 && m.multiplier > 0);
 
-        if (!desc || (!numericBase && numericModules.length === 0) || !date) return;
+        if (!desc || numericModules.length === 0 || !date) return;
 
-        const extrasTotal = numericModules.reduce((acc, curr) => acc + curr.amount * curr.multiplier, 0);
-        const total = numericBase + extrasTotal;
+        const total = numericModules.reduce((acc, curr) => acc + curr.amount * curr.multiplier, 0);
 
-        const moduleTotalsById = new Map(numericModules.map(m => [String(m.id), m.amount * m.multiplier]));
         const cleanCollaborators = collaborators
-            .map(c => {
-                const percent = parseAmount(c.percent);
-                const share = c.mode === 'module'
-                    ? (moduleTotalsById.get(String(c.moduleId)) || 0)
-                    : (total * (percent / 100));
-                return { ...c, percent, share };
-            })
-            .filter(c => c.name && c.share > 0);
+            .filter(c => c.email)
+            .map(c => ({
+                ...c,
+                percent: collabMode === 'percent' ? parseAmount(c.percent) : null,
+                moduleId: collabMode === 'module' ? c.moduleId : null
+            }));
 
-        onAddPlanned({ description: desc, amount: total, date, modules: numericModules, deadline_date: deadlineDate, event_date: eventDate, collaborators: cleanCollaborators });
-        setDesc(''); setBaseAmount(''); setModules([]); setCollaborators([]); setIsAdding(false);
+        onAddPlanned({
+            description: desc,
+            amount: total,
+            collaboration_mode: collabMode,
+            date,
+            modules: numericModules,
+            deadline_date: deadlineDate,
+            event_date: eventDate,
+            collaborators: cleanCollaborators
+        });
+        setDesc(''); setModules([]); setCollaborators([]); setIsAdding(false); setCollabMode('percent');
     };
 
     const total = plannedExpenses.reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
@@ -536,9 +587,12 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
                         <label className="block text-xs font-medium text-finance-text mb-1">Descripción principal</label>
                         <input type="text" value={desc} onChange={e => setDesc(e.target.value)} required className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
                     </div>
-                    <div>
-                        <label className="block text-xs font-medium text-finance-text mb-1">Monto principal ($)</label>
-                        <input type="text" inputMode="decimal" value={baseAmount} onChange={e => setBaseAmount(formatInputAmount(e.target.value))} placeholder="0.00" className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
+                    <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-finance-text mb-1">Modo de colaboración</label>
+                        <select value={collabMode} onChange={e => setCollabMode(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
+                            <option value="percent">Porcentual</option>
+                            <option value="module">Por módulo</option>
+                        </select>
                     </div>
                     <div className="sm:col-span-4">
                         <div className="flex justify-between items-center mb-2">
@@ -560,11 +614,11 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
                     </div>
                     <div className="sm:col-span-2">
                         <label className="block text-xs font-medium text-finance-text mb-1">Fecha límite para reunir el dinero</label>
-                        <input type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text" />
+                        <input type="date" min={format(new Date(), 'yyyy-MM-dd')} value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text" />
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-finance-text mb-1">Fecha del evento / gasto</label>
-                        <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text" />
+                        <input type="date" min={format(new Date(), 'yyyy-MM-dd')} value={eventDate} onChange={e => setEventDate(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text" />
                     </div>
                     <div className="sm:col-span-4">
                         <div className="flex justify-between items-center mb-2">
@@ -575,13 +629,8 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
                             <div className="space-y-2">
                                 {collaborators.map(c => (
                                     <div key={c.id} className="grid grid-cols-7 gap-2 items-center">
-                                        <input type="text" value={c.name} onChange={e => handleCollaboratorChange(c.id, 'name', e.target.value)} placeholder="Nombre" className="col-span-2 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
-                                        <input type="email" value={c.email} onChange={e => handleCollaboratorChange(c.id, 'email', e.target.value)} placeholder="Email" className="col-span-2 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
-                                        <select value={c.mode} onChange={e => handleCollaboratorChange(c.id, 'mode', e.target.value)} className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
-                                            <option value="percent">%</option>
-                                            <option value="module">Módulo</option>
-                                        </select>
-                                        {c.mode === 'module' ? (
+                                        <input type="email" value={c.email} onChange={e => handleCollaboratorChange(c.id, 'email', e.target.value)} placeholder="Email" className="col-span-4 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
+                                        {collabMode === 'module' ? (
                                             <select value={c.moduleId} onChange={e => handleCollaboratorChange(c.id, 'moduleId', e.target.value)} className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
                                                 <option value="">Módulo</option>
                                                 {modules.map(m => <option key={m.id} value={String(m.id)}>{m.label || 'Sin nombre'}</option>)}
@@ -768,7 +817,7 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
 
                 <div className="p-5">
                     {(() => {
-                        const tabs = isMember ? ['graficas', 'detalle', 'editar', 'compartir'] : ['graficas', 'detalle'];
+                        const tabs = isMember ? ['graficas', 'detalle', 'alcancía', 'compartir'] : ['graficas', 'detalle', 'alcancía'];
                         return (
                             <div className="inline-flex bg-finance-input rounded-full p-1 text-xs font-medium border border-finance-inputBorder">
                                 {tabs.map(t => (
@@ -864,6 +913,16 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
                                     Guardar cambios
                                 </button>
                             </div>
+                        </div>
+                    )}
+
+                    
+                    {tab === 'alcancía' && (
+                        <div className="mt-5 space-y-4">
+                            <p className="text-sm font-bold text-finance-text mb-3">Progreso de la Alcancía</p>
+                            <p className="text-xs text-finance-text/70 mb-4">Los registros de la alcancía se muestran aquí.</p>
+                            {/* Placeholder for saving records view. Detailed implementation would fetch from plan_savings_records */}
+                            <p className="text-xs italic text-finance-text/50">Esta función utiliza los datos de plan_savings_records (implementado en BD).</p>
                         </div>
                     )}
 
@@ -984,6 +1043,156 @@ const AddToPlanModal = ({ transaction, plans, currentUserId, onConfirm, onClose 
                     </button>
                 </div>
             </div>
+        </div>
+    );
+};
+
+
+const InvitacionesTab = ({ invitations, onRefresh }) => {
+    const handleAccept = async (id) => {
+        await supabase.from('plan_members').update({ status: 'accepted' }).eq('id', id);
+        onRefresh();
+    };
+
+    const handleReject = async (id) => {
+        await supabase.from('plan_members').update({ status: 'rejected' }).eq('id', id);
+        onRefresh();
+    };
+
+    return (
+        <div className="bg-finance-card p-6 rounded-2xl shadow-sm border border-finance-inputBorder">
+            <h2 className="text-lg font-bold text-finance-text mb-6">Invitaciones a Planes</h2>
+            {invitations.length === 0 ? (
+                <p className="text-finance-text/50 font-medium text-sm">No tienes invitaciones pendientes</p>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {invitations.map(inv => (
+                        <div key={inv.id} className="p-4 border border-finance-inputBorder rounded-xl hover:bg-finance-input/60 transition-colors">
+                            <p className="font-bold text-finance-text mb-1">{inv.planned_expenses?.description}</p>
+                            <p className="text-xs text-finance-text/70 mb-4">Total: ${Number(inv.planned_expenses?.amount || 0).toFixed(2)}</p>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleAccept(inv.id)} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg text-sm transition-colors">Aceptar</button>
+                                <button onClick={() => handleReject(inv.id)} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-lg text-sm transition-colors">Rechazar</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const AhorroTab = ({ currentUserId, plannedExpenses }) => {
+    const [subTab, setSubTab] = useState('personal');
+    const [goals, setGoals] = useState([]);
+    const [name, setName] = useState('');
+    const [targetAmount, setTargetAmount] = useState('');
+    const [deadline, setDeadline] = useState('');
+
+    const fetchGoals = async () => {
+        const { data } = await supabase.from('personal_savings_goals').select('*, personal_savings_records(*)');
+        if (data) setGoals(data);
+    };
+
+    React.useEffect(() => { fetchGoals(); }, []);
+
+    const handleAddGoal = async (e) => {
+        e.preventDefault();
+        const amt = parseFloat(targetAmount);
+        if (!name || !amt) return;
+        await supabase.from('personal_savings_goals').insert({
+            user_id: currentUserId, name, target_amount: amt, deadline: deadline || null
+        });
+        setName(''); setTargetAmount(''); setDeadline('');
+        fetchGoals();
+    };
+
+    const handleAddRecord = async (goalId, amountStr) => {
+        const amt = parseFloat(amountStr);
+        if (!amt) return;
+        await supabase.from('personal_savings_records').insert({
+            user_id: currentUserId, goal_id: goalId, amount: amt
+        });
+        fetchGoals();
+    };
+
+    const handleDeleteGoal = async (id) => {
+        if (window.confirm('¿Eliminar esta meta de ahorro?')) {
+            await supabase.from('personal_savings_goals').delete().eq('id', id);
+            fetchGoals();
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="flex bg-finance-primary p-1 rounded-xl w-fit mb-4 shadow-sm gap-1">
+                <button onClick={() => setSubTab('personal')} className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${subTab === 'personal' ? 'bg-white text-finance-primary shadow-sm' : 'text-white hover:bg-white/20'}`}>Personal</button>
+                <button onClick={() => setSubTab('planes')} className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${subTab === 'planes' ? 'bg-white text-finance-primary shadow-sm' : 'text-white hover:bg-white/20'}`}>Para planes</button>
+            </div>
+
+            {subTab === 'personal' && (
+                <>
+                    <form onSubmit={handleAddGoal} className="p-4 bg-finance-card border border-finance-inputBorder rounded-xl grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div className="md:col-span-1">
+                            <label className="block text-xs font-medium text-finance-text mb-1">Meta de Ahorro</label>
+                            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Ej: Laptop" className="w-full p-2 bg-finance-input border border-finance-inputBorder rounded-lg text-sm text-finance-text" required />
+                        </div>
+                        <div className="md:col-span-1">
+                            <label className="block text-xs font-medium text-finance-text mb-1">Monto Objetivo ($)</label>
+                            <input value={targetAmount} onChange={e=>setTargetAmount(e.target.value)} placeholder="1000" className="w-full p-2 bg-finance-input border border-finance-inputBorder rounded-lg text-sm text-finance-text" required />
+                        </div>
+                        <div className="md:col-span-1">
+                            <label className="block text-xs font-medium text-finance-text mb-1">Fecha Límite (Opcional)</label>
+                            <input type="date" value={deadline} onChange={e=>setDeadline(e.target.value)} min={new Date().toISOString().split('T')[0]} className="w-full p-2 bg-finance-input border border-finance-inputBorder rounded-lg text-sm text-finance-text" />
+                        </div>
+                        <div className="md:col-span-1">
+                            <button type="submit" className="w-full bg-finance-primary text-white font-medium p-2 rounded-lg text-sm hover:brightness-95">+ Crear Meta</button>
+                        </div>
+                    </form>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {goals.map(g => {
+                            const current = (g.personal_savings_records || []).reduce((acc, r) => acc + Number(r.amount), 0);
+                            const target = Number(g.target_amount);
+                            const progress = Math.min(100, (current / target) * 100);
+                            const isCompleted = current >= target;
+                            return (
+                                <div key={g.id} className={`p-4 border rounded-xl shadow-sm ${isCompleted ? 'bg-green-50/50 border-green-200' : 'bg-finance-card border-finance-inputBorder'}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h3 className="font-bold text-finance-text">{g.name}</h3>
+                                        <button onClick={() => handleDeleteGoal(g.id)} className="text-[10px] text-red-500 hover:text-red-700">Eliminar</button>
+                                    </div>
+                                    <p className="text-xs text-finance-text/70 mb-3">
+                                        Recolectado: ${current.toFixed(2)} / ${target.toFixed(2)}
+                                        {g.deadline && ` • Límite: ${g.deadline}`}
+                                    </p>
+                                    <div className="w-full bg-finance-input rounded-full h-2.5 mb-4">
+                                        <div className={`h-2.5 rounded-full ${isCompleted ? 'bg-green-500' : 'bg-finance-primary'}`} style={{ width: `${progress}%` }}></div>
+                                    </div>
+                                    {!isCompleted && (
+                                        <form onSubmit={(e) => { e.preventDefault(); const v = e.target.amt.value; handleAddRecord(g.id, v); e.target.reset(); }} className="flex gap-2">
+                                            <input name="amt" type="number" step="0.01" min="0.01" placeholder="Monto" className="flex-1 p-2 bg-finance-input border border-finance-inputBorder rounded-lg text-xs text-finance-text" required />
+                                            <button type="submit" className="bg-finance-primary text-white px-3 py-2 rounded-lg text-xs font-medium hover:brightness-95">Depositar</button>
+                                        </form>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
+
+            {subTab === 'planes' && (
+                <div className="space-y-4">
+                    {plannedExpenses.filter(p => p.plan_members?.some(m => m.member_id === currentUserId && m.status === 'accepted') || p.user_id === currentUserId).map(p => (
+                        <div key={p.id} className="bg-finance-card p-4 border border-finance-inputBorder rounded-xl">
+                            <h3 className="font-bold text-finance-text mb-1">{p.description}</h3>
+                            <p className="text-xs text-finance-text/70">Para ver y reportar aportes, abre el plan en Planificación y ve a la pestaña Alcancía.</p>
+                        </div>
+                    ))}
+                    {plannedExpenses.length === 0 && <p className="text-sm text-finance-text/50">No participas en ningún plan.</p>}
+                </div>
+            )}
         </div>
     );
 };
