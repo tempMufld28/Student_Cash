@@ -28,7 +28,7 @@ const SplashScreen = ({ onFinish }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'linear-gradient(135deg, #1e3a5f 0%, #0f172a 60%, #1a2e4a 100%)',
+                background: 'linear-gradient(135deg, #1C1410 0%, #2A1F14 50%, #1C1410 100%)',
                 flexDirection: 'column',
                 gap: '12px',
             }}
@@ -41,7 +41,7 @@ const SplashScreen = ({ onFinish }) => {
                         style={{
                             position: 'absolute',
                             borderRadius: '50%',
-                            background: 'rgba(99, 179, 237, 0.08)',
+                            background: 'rgba(166, 138, 100, 0.10)',
                             width: `${40 + (i * 20) % 80}px`,
                             height: `${40 + (i * 20) % 80}px`,
                             top: `${(i * 37) % 100}%`,
@@ -71,7 +71,7 @@ const SplashScreen = ({ onFinish }) => {
                             fontSize: 'clamp(14px, 4vw, 18px)',
                             fontWeight: 500,
                             letterSpacing: '0.35em',
-                            color: 'rgba(147, 197, 253, 0.85)',
+                            color: 'rgba(230, 199, 141, 0.85)',
                             textTransform: 'uppercase',
                             fontFamily: "'Inter', system-ui, sans-serif",
                             margin: 0,
@@ -84,7 +84,7 @@ const SplashScreen = ({ onFinish }) => {
                     <div
                         style={{
                             height: '2px',
-                            background: 'linear-gradient(90deg, transparent, #60a5fa, transparent)',
+                            background: 'linear-gradient(90deg, transparent, #DDB892, transparent)',
                             animation: 'expandLine 0.8s ease 0.2s forwards',
                             width: 0,
                         }}
@@ -109,20 +109,20 @@ const SplashScreen = ({ onFinish }) => {
                         style={{
                             fontSize: 'clamp(32px, 8vw, 52px)',
                             fontWeight: 800,
-                            color: '#fff',
+                            color: '#F5F1E9',
                             margin: 0,
                             letterSpacing: '-0.02em',
                             fontFamily: "'Inter', system-ui, sans-serif",
                             animation: 'fadeInUp 0.5s ease forwards',
-                            textShadow: '0 0 40px rgba(96, 165, 250, 0.5)',
+                            textShadow: '0 0 40px rgba(166, 138, 100, 0.5)',
                         }}
                     >
-                        Student<span style={{ color: '#60a5fa' }}>-Cash</span>
+                        Student<span style={{ color: '#A68A64' }}>-Cash</span>
                     </h1>
                     <p
                         style={{
                             fontSize: '13px',
-                            color: 'rgba(147, 197, 253, 0.7)',
+                            color: 'rgba(245, 241, 233, 0.55)',
                             margin: 0,
                             letterSpacing: '0.08em',
                             fontFamily: "'Inter', system-ui, sans-serif",
@@ -140,7 +140,7 @@ const SplashScreen = ({ onFinish }) => {
                                     width: '6px',
                                     height: '6px',
                                     borderRadius: '50%',
-                                    background: '#60a5fa',
+                                    background: '#A68A64',
                                     animation: `bounce 0.9s ease ${i * 0.15}s infinite alternate`,
                                 }}
                             />
