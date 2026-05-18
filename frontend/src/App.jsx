@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import InstallPrompt from './components/InstallPrompt';
+import SplashScreen from './components/SplashScreen';
 
 const ProtectedRoute = ({ children }) => {
     const { user, isGuest } = useAuth();
@@ -34,8 +36,19 @@ function AppRoutes() {
 }
 
 function App() {
+    // Show splash only once per session
+    const [showSplash, setShowSplash] = useState(
+        () => !sessionStorage.getItem('sc_splash_shown')
+    );
+
+    const handleSplashFinish = useCallback(() => {
+        sessionStorage.setItem('sc_splash_shown', '1');
+        setShowSplash(false);
+    }, []);
+
     return (
         <AuthProvider>
+            {showSplash && <SplashScreen onFinish={handleSplashFinish} />}
             <BrowserRouter>
                 <AppRoutes />
                 <InstallPrompt />

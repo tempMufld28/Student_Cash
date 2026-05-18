@@ -276,7 +276,22 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
     expenses.forEach(e => { chartDataMap[e.category] = (chartDataMap[e.category] || 0) + parseAmount(e.amount); });
     const chartData = Object.keys(chartDataMap).map(c => ({ name: c, value: chartDataMap[c] })).filter(d => d.value > 0);
 
+    // --- Ingresos vs Gastos por día ---
+    const vsDataMap = {};
+    transactions.forEach(t => {
+        const day = String(t.date || '').split('T')[0];
+        if (!day) return;
+        if (!vsDataMap[day]) vsDataMap[day] = { name: day, ingresos: 0, gastos: 0 };
+        if (t.type === 'Ingreso') vsDataMap[day].ingresos += parseAmount(t.amount);
+        else vsDataMap[day].gastos += parseAmount(t.amount);
+    });
+    const vsChartData = Object.values(vsDataMap).sort((a, b) => a.name.localeCompare(b.name)).map(d => ({
+        ...d,
+        name: (() => { try { const [y,m,dd] = d.name.split('-'); const months=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return `${parseInt(dd)} ${months[parseInt(m)-1]}`; } catch { return d.name; } })()
+    }));
+
     const [chartType, setChartType] = useState('pie');
+    const [showVS, setShowVS] = useState(false);
 
     return (
         <div className="space-y-6">
@@ -365,8 +380,9 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
                             </button>
                         </div>
                     </div>
+
                     <div className="flex-1 flex items-center justify-center min-h-[250px]">
-                        {chartData.length > 0 ? (
+                        {(chartType === 'pie' ? chartData.length > 0 : vsChartData.length > 0) ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 {chartType === 'pie' ? (
                                     <PieChart>
@@ -378,25 +394,37 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
                                         <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
                                     </PieChart>
                                 ) : (
-                                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="name" />
-                                        <YAxis />
-                                        <Tooltip formatter={(value) => `$${Number(value).toFixed(2)}`} />
-                                        <Legend />
-                                        <Bar dataKey="value">
-                                            {chartData.map((entry, index) => (
-                                                <Cell key={`bar-cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Bar>
+                                    <BarChart data={vsChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.4} />
+                                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                        <YAxis tick={{ fontSize: 11 }} />
+                                        <Tooltip formatter={(value, name) => [`$${Number(value).toFixed(2)}`, name === 'ingresos' ? 'Ingresos' : 'Gastos']} />
+                                        <Legend formatter={(value) => value === 'ingresos' ? 'Ingresos' : 'Gastos'} />
+                                        <Bar dataKey="ingresos" name="ingresos" fill="#10b981" radius={[4,4,0,0]} />
+                                        <Bar dataKey="gastos" name="gastos" fill="#ef4444" radius={[4,4,0,0]} />
                                     </BarChart>
                                 )}
                             </ResponsiveContainer>
                         ) : (
-                            <p className="text-finance-text/50 font-medium text-sm">No hay gastos registrados aún</p>
+                            <div className="flex flex-col items-center gap-4 py-4">
+                                {/* Wallet illustration */}
+                                <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect width="80" height="80" rx="20" fill="currentColor" className="text-finance-primary/10" />
+                                    <rect x="14" y="26" width="52" height="34" rx="7" fill="currentColor" className="text-finance-primary/25" />
+                                    <rect x="14" y="34" width="52" height="26" rx="7" fill="currentColor" className="text-finance-primary/40" />
+                                    <rect x="44" y="41" width="16" height="12" rx="6" fill="currentColor" className="text-finance-primary" />
+                                    <circle cx="51" cy="47" r="3" fill="white" />
+                                    <rect x="18" y="20" width="30" height="8" rx="4" fill="currentColor" className="text-finance-primary/30" />
+                                </svg>
+                                <div className="text-center">
+                                    <p className="font-semibold text-finance-text text-sm">Tu billetera está lista.</p>
+                                    <p className="text-finance-primary font-bold text-sm mt-0.5">¡Agrega tu primer gasto!</p>
+                                </div>
+                            </div>
                         )}
                     </div>
-                    {chartData.length > 0 && (
+
+                    {chartType === 'pie' && chartData.length > 0 && (
                         <div className="flex flex-wrap gap-3 mt-4 justify-center">
                             {chartData.map((d, i) => (
                                 <div key={d.name} className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -404,6 +432,63 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
                                     {d.name}
                                 </div>
                             ))}
+                        </div>
+                    )}
+
+                    {/* VS Button & Panel */}
+                    {(totalIncome > 0 || totalExpense > 0) && (
+                        <div className="mt-5 border-t border-finance-inputBorder pt-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowVS(v => !v)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-finance-input hover:bg-finance-primary/10 border border-finance-inputBorder transition-all group"
+                            >
+                                <span className="text-sm font-bold text-finance-text group-hover:text-finance-primary transition-colors">Ingresos vs. Gastos</span>
+                                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-finance-primary text-white tracking-wider">VS</span>
+                            </button>
+                            {showVS && (
+                                <div className="mt-3 p-4 bg-finance-input rounded-xl border border-finance-inputBorder space-y-3">
+                                    {/* Percentage bars */}
+                                    {(() => {
+                                        const total = totalIncome + totalExpense;
+                                        const incPct = total > 0 ? Math.round((totalIncome / total) * 100) : 0;
+                                        const expPct = total > 0 ? Math.round((totalExpense / total) * 100) : 0;
+                                        const savingPct = totalIncome > 0 ? Math.max(0, Math.round(((totalIncome - totalExpense) / totalIncome) * 100)) : 0;
+                                        const spentPct = totalIncome > 0 ? Math.min(100, Math.round((totalExpense / totalIncome) * 100)) : 0;
+                                        return (
+                                            <>
+                                                <div>
+                                                    <div className="flex justify-between text-xs font-semibold mb-1">
+                                                        <span className="text-green-600">Ingresos</span>
+                                                        <span className="text-green-600">${totalIncome.toFixed(2)} ({incPct}%)</span>
+                                                    </div>
+                                                    <div className="h-3 bg-finance-card rounded-full overflow-hidden border border-finance-inputBorder">
+                                                        <div className="h-full bg-gradient-to-r from-emerald-400 to-green-500 rounded-full transition-all duration-700" style={{ width: `${incPct}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="flex justify-between text-xs font-semibold mb-1">
+                                                        <span className="text-red-500">Gastos</span>
+                                                        <span className="text-red-500">${totalExpense.toFixed(2)} ({expPct}%)</span>
+                                                    </div>
+                                                    <div className="h-3 bg-finance-card rounded-full overflow-hidden border border-finance-inputBorder">
+                                                        <div className="h-full bg-gradient-to-r from-red-400 to-rose-500 rounded-full transition-all duration-700" style={{ width: `${expPct}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div className="pt-1 border-t border-finance-inputBorder">
+                                                    <p className="text-xs text-finance-text/70 font-medium">
+                                                        {totalIncome > 0
+                                                            ? spentPct >= 100
+                                                                ? <span className="text-red-500 font-bold">⚠️ Gastaste más de lo que ingresaste ({spentPct}%)</span>
+                                                                : <><span className="font-bold text-finance-text">Gastaste el {spentPct}% </span> de tus ingresos. <span className="text-green-600 font-bold">Ahorraste el {savingPct}%.</span></>
+                                                            : 'Registra ingresos para ver la comparación completa.'}
+                                                    </p>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

@@ -33,7 +33,7 @@ const PasswordField = ({ name, value, onChange, placeholder, required, id }) => 
 
 const Auth = () => {
     const { isDark, toggleTheme } = useTheme();
-    // step can be: 'login', 'register', 'verify_otp', 'recover', 'recover_otp', 'new_password'
+    // step: 'login' | 'register' | 'verify_otp' | 'recover' | 'recover_otp' | 'new_password' | 'login_otp_request' | 'login_otp_verify'
     const [step, setStep] = useState('login');
     const [formData, setFormData] = useState({ name: '', email: '', password: '', newPassword: '' });
     const [otpInput, setOtpInput] = useState('');
@@ -126,6 +126,48 @@ const Auth = () => {
         }
     };
 
+    // --- OTP LOGIN (passwordless) ---
+    const handleLoginOtpRequest = async (e) => {
+        e.preventDefault();
+        setError(''); setInfo(''); setIsSubmitting(true);
+        try {
+            const { error } = await supabase.auth.signInWithOtp({
+                email: formData.email,
+                options: { shouldCreateUser: false },
+            });
+            if (error) throw error;
+            setStep('login_otp_verify');
+            setOtpInput('');
+            setInfo('Te enviamos un código de 6 dígitos a tu correo. Ingrésalo para acceder.');
+        } catch (err) {
+            if (err.message?.toLowerCase().includes('signups not allowed')) {
+                setError('No existe una cuenta con ese correo.');
+            } else {
+                setError(err.message || 'Error al enviar el código');
+            }
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleLoginOtpVerify = async (e) => {
+        e.preventDefault();
+        setError(''); setInfo(''); setIsSubmitting(true);
+        try {
+            const { error } = await supabase.auth.verifyOtp({
+                email: formData.email,
+                token: otpInput,
+                type: 'magiclink',
+            });
+            if (error) throw error;
+            navigate('/');
+        } catch (err) {
+            setError(err.message || 'Código incorrecto o expirado');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleRecoverOtpVerify = async (e) => {
         e.preventDefault();
         setError(''); setInfo(''); setIsSubmitting(true);
@@ -204,14 +246,23 @@ const Auth = () => {
                                     <label className="block text-sm font-semibold text-finance-text mb-1.5">Contraseña</label>
                                     <PasswordField id="auth-password" name="password" value={formData.password} onChange={handleInputChange} placeholder="••••••••" required />
                                 </div>
-                                <div className="text-right">
+                                <div className="flex justify-between items-center">
                                     <button
                                         type="button"
-                                        onClick={() => { setStep('recover'); setError(''); setInfo(''); }}
-                                        className={`text-sm font-semibold transition-all ${failedAttempts >= 3 ? 'text-red-500 animate-pulse' : 'text-finance-primary hover:text-finance-primary/80'}`}
+                                        onClick={() => { setStep('login_otp_request'); setError(''); setInfo(''); }}
+                                        className="text-sm font-semibold text-finance-primary hover:text-finance-primary/80 transition-all"
                                     >
-                                        ¿Olvidaste tu contraseña?
+                                        ¿No recuerdas tu contraseña?
                                     </button>
+                                    {failedAttempts >= 3 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setStep('recover'); setError(''); setInfo(''); }}
+                                            className="text-sm font-semibold text-red-500 animate-pulse"
+                                        >
+                                            Restablecer
+                                        </button>
+                                    )}
                                 </div>
                                 {error && <p className="text-red-500 text-sm mt-2 font-medium bg-red-50 p-2 rounded">{error}</p>}
                                 {info && <p className="text-blue-600 text-sm mt-2 font-medium bg-blue-50 p-2 rounded">{info}</p>}
@@ -308,6 +359,60 @@ const Auth = () => {
                                 </button>
                                 <button type="button" onClick={() => setStep('recover')} className="w-full text-sm font-semibold text-finance-text/70 hover:text-finance-text mt-2">
                                     Volver
+                                </button>
+                            </form>
+                        </>
+                    )}
+
+                    {/* LOGIN OTP REQUEST FORM */}
+                    {step === 'login_otp_request' && (
+                        <>
+                            <h2 className="text-xl font-bold text-finance-text mb-1">Ingresar con código</h2>
+                            <p className="text-sm text-finance-text/70 mb-6 font-medium">Te enviaremos un código de 6 dígitos a tu correo para que puedas ingresar sin contraseña</p>
+                            <form onSubmit={handleLoginOtpRequest} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-finance-text mb-1.5">Email de tu cuenta</label>
+                                    <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="tu@email.com" className="w-full bg-finance-input border border-finance-inputBorder text-finance-text text-sm rounded-lg focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary block p-3 outline-none transition-all placeholder:text-finance-text/40" required />
+                                </div>
+                                {error && <p className="text-red-500 text-sm mt-2 font-medium bg-red-50 p-2 rounded">{error}</p>}
+                                {info && <p className="text-blue-600 text-sm mt-2 font-medium bg-blue-50 p-2 rounded">{info}</p>}
+                                <button type="submit" disabled={isSubmitting} className={`w-full text-white font-medium py-3 rounded-xl transition-colors mt-2 shadow-md ${isSubmitting ? 'bg-finance-primary/60 cursor-not-allowed' : 'bg-finance-primary hover:brightness-95'}`}>
+                                    {isSubmitting ? 'Enviando...' : 'Continuar'}
+                                </button>
+                                <button type="button" onClick={() => { setStep('login'); setError(''); setInfo(''); }} className="w-full text-sm font-semibold text-finance-text/70 hover:text-finance-text mt-2">
+                                    Volver al inicio de sesión
+                                </button>
+                            </form>
+                        </>
+                    )}
+
+                    {/* LOGIN OTP VERIFY FORM */}
+                    {step === 'login_otp_verify' && (
+                        <>
+                            <h2 className="text-xl font-bold text-finance-text mb-1">Ingresa tu código</h2>
+                            <p className="text-sm text-finance-text/70 mb-1 font-medium">Revisá tu correo</p>
+                            <p className="text-xs text-finance-primary font-semibold mb-6">{formData.email}</p>
+                            <form onSubmit={handleLoginOtpVerify} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-finance-text mb-1.5">Código de 6 dígitos</label>
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        maxLength={6}
+                                        value={otpInput}
+                                        onChange={e => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                                        placeholder="123456"
+                                        className="w-full text-center tracking-[1em] font-mono bg-finance-input border border-finance-inputBorder text-finance-text text-lg rounded-lg focus:ring-2 focus:ring-finance-primary/40 focus:border-finance-primary block p-3 outline-none transition-all"
+                                        required
+                                    />
+                                </div>
+                                {error && <p className="text-red-500 text-sm mt-2 font-medium bg-red-50 p-2 rounded">{error}</p>}
+                                {info && <p className="text-blue-600 text-sm mt-2 font-medium bg-blue-50 p-2 rounded">{info}</p>}
+                                <button type="submit" disabled={isSubmitting || otpInput.length < 6} className={`w-full text-white font-medium py-3 rounded-xl transition-colors mt-2 shadow-md ${isSubmitting || otpInput.length < 6 ? 'bg-finance-primary/60 cursor-not-allowed' : 'bg-finance-primary hover:brightness-95'}`}>
+                                    {isSubmitting ? 'Verificando...' : 'Acceder a mi cuenta'}
+                                </button>
+                                <button type="button" onClick={() => { setStep('login_otp_request'); setError(''); setInfo(''); setOtpInput(''); }} className="w-full text-sm font-semibold text-finance-text/70 hover:text-finance-text mt-2">
+                                    Reenviar código
                                 </button>
                             </form>
                         </>
