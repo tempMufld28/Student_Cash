@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
+import { PiggyBank, Mail } from 'lucide-react';
 
 const CATEGORIES = [
     'Alimentación', 'Transporte', 'Entretenimiento', 'Educación',
@@ -129,7 +130,7 @@ const Dashboard = () => {
             member_email: email,
             member_id: userId,
             role: 'editor',
-            status: 'accepted',
+            status: 'pending',
         });
         if (!error) fetchData();
         return { error: error?.message || null };
@@ -154,10 +155,10 @@ const Dashboard = () => {
     return (
         <div className="space-y-6">
             
-            <div className="flex bg-finance-primary p-1 rounded-xl w-fit mb-6 shadow-sm gap-1 overflow-x-auto">
+            <div className="flex bg-finance-primary p-1 rounded-xl w-fit mb-6 shadow-sm gap-1 overflow-x-auto flex-shrink-0">
                 <button
                     onClick={() => setActiveTab('resumen')}
-                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    className={`px-3 md:px-5 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'resumen'
                             ? 'bg-white text-finance-primary shadow-sm'
                             : 'text-white hover:bg-white/20'
@@ -167,33 +168,38 @@ const Dashboard = () => {
                 </button>
                 <button
                     onClick={() => setActiveTab('planificacion')}
-                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    className={`px-3 md:px-5 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 ${
                         activeTab === 'planificacion'
                             ? 'bg-white text-finance-primary shadow-sm'
                             : 'text-white hover:bg-white/20'
                     }`}
                 >
-                    Planificación
+                    <span className="hidden sm:inline">Planificación</span>
+                    <span className="sm:hidden">Plan</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('ahorro')}
-                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    title="Ahorro"
+                    className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 ${
                         activeTab === 'ahorro'
                             ? 'bg-white text-finance-primary shadow-sm'
                             : 'text-white hover:bg-white/20'
                     }`}
                 >
-                    Ahorro
+                    <PiggyBank size={16} />
+                    <span className="hidden md:inline">Ahorro</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('invitaciones')}
-                    className={`px-4 md:px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 relative ${
+                    title="Invitaciones"
+                    className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 relative flex items-center gap-1.5 ${
                         activeTab === 'invitaciones'
                             ? 'bg-white text-finance-primary shadow-sm'
                             : 'text-white hover:bg-white/20'
                     }`}
                 >
-                    Invitaciones
+                    <Mail size={16} />
+                    <span className="hidden md:inline">Invitaciones</span>
                     {invitations.length > 0 && (
                         <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
                             {invitations.length}
@@ -870,7 +876,8 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
         searchTimeout.current = setTimeout(async () => {
             const { data } = await supabase.rpc('search_users_by_email', { query: value });
             if (data && data.length > 0) {
-                setEmailSuggestions(data.map(r => r.email));
+                // Store full objects {email, name} so dropdown can show both
+                setEmailSuggestions(data.map(r => ({ email: r.email, name: r.name || '' })));
                 setShowSuggestions(true);
             } else {
                 setEmailSuggestions([]);
@@ -879,15 +886,15 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
         }, 300);
     };
 
-    const selectSuggestion = (email) => {
-        setCollabEmail(email);
+    const selectSuggestion = (suggestion) => {
+        setCollabEmail(suggestion.email);
         setEmailSuggestions([]);
         setShowSuggestions(false);
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-3xl bg-finance-card rounded-2xl shadow-xl border border-finance-inputBorder overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 md:p-4">
+            <div className="w-full max-w-3xl bg-finance-card rounded-2xl shadow-xl border border-finance-inputBorder overflow-hidden max-h-[92vh] flex flex-col">
                 <div className="p-5 flex items-start justify-between gap-4 border-b border-finance-inputBorder">
                     <div>
                         <h3 className="text-lg font-bold text-finance-text">{plan.description}</h3>
@@ -900,14 +907,18 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
                     <button onClick={onClose} className="text-sm font-semibold text-finance-text/70 hover:text-finance-text">Cerrar</button>
                 </div>
 
-                <div className="p-5">
+                <div className="p-4 md:p-5 overflow-y-auto flex-1">
                     {(() => {
-                        const tabs = isMember ? ['graficas', 'detalle', 'alcancía', 'compartir'] : ['graficas', 'detalle', 'alcancía'];
+                        const tabs = isOwner
+                            ? ['graficas', 'detalle', 'editar', 'alcancía', 'compartir']
+                            : isMember
+                                ? ['graficas', 'detalle', 'editar', 'alcancía']
+                                : ['graficas', 'detalle', 'alcancía'];
                         return (
-                            <div className="inline-flex bg-finance-input rounded-full p-1 text-xs font-medium border border-finance-inputBorder">
+                            <div className="flex flex-wrap gap-1 bg-finance-input rounded-xl p-1 text-xs font-medium border border-finance-inputBorder">
                                 {tabs.map(t => (
-                                    <button key={t} type="button" onClick={() => setTab(t)} className={`px-3 py-1 rounded-full transition-colors capitalize ${tab === t ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}>
-                                        {t === 'graficas' ? 'Gráficas' : t === 'compartir' ? 'Compartir' : t.charAt(0).toUpperCase() + t.slice(1)}
+                                    <button key={t} type="button" onClick={() => setTab(t)} className={`px-2.5 py-1 rounded-lg transition-colors capitalize ${tab === t ? 'bg-finance-card shadow text-finance-text' : 'text-finance-text/70 hover:text-finance-text'}`}>
+                                        {t === 'graficas' ? 'Gráficas' : t === 'compartir' ? 'Compartir' : t === 'editar' ? 'Editar' : t === 'alcancía' ? 'Alcancía' : t.charAt(0).toUpperCase() + t.slice(1)}
                                     </button>
                                 ))}
                             </div>
@@ -1058,14 +1069,17 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
                                             </button>
                                         </div>
                                         {showSuggestions && emailSuggestions.length > 0 && (
-                                            <ul className="absolute z-20 left-0 right-[88px] mt-1 bg-finance-card border border-finance-inputBorder rounded-xl shadow-lg overflow-hidden">
+                                            <ul className="absolute z-20 left-0 right-0 mt-1 bg-finance-card border border-finance-inputBorder rounded-xl shadow-lg overflow-hidden">
                                                 {emailSuggestions.map(s => (
                                                     <li
-                                                        key={s}
+                                                        key={s.email}
                                                         onMouseDown={() => selectSuggestion(s)}
-                                                        className="px-3 py-2 text-sm text-finance-text hover:bg-finance-primary hover:text-white cursor-pointer transition-colors"
+                                                        className="px-3 py-2 cursor-pointer hover:bg-finance-primary hover:text-white transition-colors group"
                                                     >
-                                                        {s}
+                                                        {s.name && (
+                                                            <p className="text-sm font-semibold text-finance-text group-hover:text-white leading-tight">{s.name}</p>
+                                                        )}
+                                                        <p className="text-xs text-finance-text/60 group-hover:text-white/80">{s.email}</p>
                                                     </li>
                                                 ))}
                                             </ul>
