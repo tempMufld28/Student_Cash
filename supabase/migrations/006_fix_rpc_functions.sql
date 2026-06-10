@@ -2,6 +2,7 @@
 -- Run this in the Supabase SQL Editor if the autocomplete or adding collaborators doesn't work.
 
 -- 1. Function to look up a user ID by email (used when adding a collaborator)
+DROP FUNCTION IF EXISTS public.get_user_id_by_email(lookup_email text);
 CREATE OR REPLACE FUNCTION public.get_user_id_by_email(lookup_email text)
 RETURNS uuid
 LANGUAGE sql
@@ -13,6 +14,7 @@ $$;
 
 -- 2. Function to search users by email with autocomplete (returns name + email)
 --    Excludes the current user from results. Uses ILIKE for case-insensitive partial match.
+DROP FUNCTION IF EXISTS public.search_users_by_email(query text);
 CREATE OR REPLACE FUNCTION public.search_users_by_email(query text)
 RETURNS TABLE(email text, name text, avatar text)
 LANGUAGE sql

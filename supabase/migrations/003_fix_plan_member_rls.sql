@@ -3,6 +3,7 @@
 -- correctly for the collaborator. A SECURITY DEFINER function bypasses that.
 
 -- 1. Helper function: checks membership bypassing plan_members RLS
+DROP FUNCTION IF EXISTS public.is_plan_member(p_plan_id bigint);
 CREATE OR REPLACE FUNCTION public.is_plan_member(p_plan_id bigint)
 RETURNS boolean
 LANGUAGE sql
@@ -41,6 +42,7 @@ CREATE POLICY "planned_expenses: owner or editor update"
   );
 
 -- 4. Email search function for autocomplete (SECURITY DEFINER to access auth.users)
+DROP FUNCTION IF EXISTS public.search_users_by_email(query text);
 CREATE OR REPLACE FUNCTION public.search_users_by_email(query text)
 RETURNS TABLE(email text)
 LANGUAGE sql

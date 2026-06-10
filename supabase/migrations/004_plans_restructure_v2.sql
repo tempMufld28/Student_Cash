@@ -68,6 +68,7 @@ CREATE POLICY "plan_savings: member insert own"
   WITH CHECK (member_id = auth.uid());
 
 -- 5. Update search_users_by_email RPC to return name and avatar
+DROP FUNCTION IF EXISTS public.search_users_by_email(query text);
 CREATE OR REPLACE FUNCTION public.search_users_by_email(query text)
 RETURNS TABLE(email text, name text, avatar text)
 LANGUAGE sql

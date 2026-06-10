@@ -52,6 +52,7 @@ CREATE POLICY "pm_owner_delete"
 -- 3. Recreate get_user_id_by_email with LOWER() normalization
 --    Returns NULL if not found (caller must check)
 -- ═══════════════════════════════════════════════════════════════════════════
+DROP FUNCTION IF EXISTS public.get_user_id_by_email(lookup_email text);
 CREATE OR REPLACE FUNCTION public.get_user_id_by_email(lookup_email text)
 RETURNS uuid
 LANGUAGE sql
@@ -71,6 +72,7 @@ GRANT EXECUTE ON FUNCTION public.get_user_id_by_email(text) TO authenticated;
 -- 4. Recreate search_users_by_email with LOWER() normalization
 --    Returns email, name, avatar for autocomplete
 -- ═══════════════════════════════════════════════════════════════════════════
+DROP FUNCTION IF EXISTS public.search_users_by_email(query text);
 CREATE OR REPLACE FUNCTION public.search_users_by_email(query text)
 RETURNS TABLE(email text, name text, avatar text)
 LANGUAGE sql
