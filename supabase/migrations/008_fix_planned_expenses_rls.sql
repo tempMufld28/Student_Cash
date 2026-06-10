@@ -1,10 +1,60 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration 008: Recreate planned_expenses RLS and savings tables/policies
+-- Migration 008: Recreate planned_expenses, plan_members, and savings tables
 -- Run this COMPLETELY in the Supabase SQL Editor (copy-paste all at once).
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 1. Helper function: checks membership bypassing plan_members RLS (prevents recursion)
+-- 1. Create tables if they do not exist (repair schema deletion)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Table: planned_expenses
+CREATE TABLE IF NOT EXISTS public.planned_expenses (
+  id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id            uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  description        text NOT NULL,
+  amount             numeric(12, 2) NOT NULL,
+  date               date NOT NULL,
+  modules            jsonb DEFAULT '[]'::jsonb,
+  deadline_date      date,
+  event_date         date,
+  collaborators      jsonb DEFAULT '[]'::jsonb,
+  collaboration_mode text NOT NULL DEFAULT 'percent' CHECK (collaboration_mode IN ('percent', 'module')),
+  created_at         timestamptz DEFAULT now()
+);
+
+-- Ensure collaboration_mode exists and has the correct constraint if table already existed
+ALTER TABLE public.planned_expenses ADD COLUMN IF NOT EXISTS collaboration_mode text NOT NULL DEFAULT 'percent';
+ALTER TABLE public.planned_expenses DROP CONSTRAINT IF EXISTS planned_expenses_collaboration_mode_check;
+ALTER TABLE public.planned_expenses ADD CONSTRAINT planned_expenses_collaboration_mode_check CHECK (collaboration_mode IN ('percent', 'module'));
+
+-- Table: plan_members
+CREATE TABLE IF NOT EXISTS public.plan_members (
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  plan_id      bigint NOT NULL REFERENCES public.planned_expenses(id) ON DELETE CASCADE,
+  invited_by   uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  member_email text NOT NULL,
+  member_id    uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  role         text NOT NULL DEFAULT 'editor' CHECK (role IN ('owner', 'editor')),
+  status       text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+  created_at   timestamptz DEFAULT now()
+);
+
+-- Ensure status constraint is updated if table already existed
+ALTER TABLE public.plan_members DROP CONSTRAINT IF EXISTS plan_members_status_check;
+ALTER TABLE public.plan_members ADD CONSTRAINT plan_members_status_check CHECK (status IN ('pending', 'accepted', 'rejected'));
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_planned_expenses_user   ON public.planned_expenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_plan_members_plan_id      ON public.plan_members(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_members_member_id    ON public.plan_members(member_id);
+CREATE INDEX IF NOT EXISTS idx_plan_members_member_email ON public.plan_members(member_email);
+
+-- Enable RLS
+ALTER TABLE public.planned_expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.plan_members ENABLE ROW LEVEL SECURITY;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 2. Helper function: checks membership bypassing plan_members RLS (prevents recursion)
 -- ═══════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION public.is_plan_member(p_plan_id bigint)
 RETURNS boolean
@@ -24,7 +74,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.is_plan_member(bigint) TO authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 2. Drop existing planned_expenses policies to prevent duplicates/conflicts
+-- 3. Recreate planned_expenses RLS policies
 -- ═══════════════════════════════════════════════════════════════════════════
 DROP POLICY IF EXISTS "own planned select"                        ON public.planned_expenses;
 DROP POLICY IF EXISTS "own planned insert"                        ON public.planned_expenses;
@@ -37,13 +87,7 @@ DROP POLICY IF EXISTS "pe_insert_owner"                           ON public.plan
 DROP POLICY IF EXISTS "pe_update_owner_or_member"                ON public.planned_expenses;
 DROP POLICY IF EXISTS "pe_delete_owner"                           ON public.planned_expenses;
 
--- ═══════════════════════════════════════════════════════════════════════════
--- 3. Recreate planned_expenses RLS policies
--- ═══════════════════════════════════════════════════════════════════════════
-ALTER TABLE public.planned_expenses ENABLE ROW LEVEL SECURITY;
-
 -- SELECT: Owner can see, OR any user invited whose status is NOT rejected (includes pending and accepted)
--- This allows users with pending invitations to view the plan description/amount!
 CREATE POLICY "pe_select_owner_or_member"
   ON public.planned_expenses FOR SELECT
   USING (
@@ -78,7 +122,53 @@ CREATE POLICY "pe_delete_owner"
   USING (user_id = auth.uid());
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 4. Ensure Ahorro (Savings) Tables and Policies are created
+-- 4. Recreate plan_members RLS policies
+-- ═══════════════════════════════════════════════════════════════════════════
+DROP POLICY IF EXISTS "plan_members: owner manage"            ON public.plan_members;
+DROP POLICY IF EXISTS "plan_members: member read"             ON public.plan_members;
+DROP POLICY IF EXISTS "plan_members: member read and respond" ON public.plan_members;
+DROP POLICY IF EXISTS "plan_members: owner insert"            ON public.plan_members;
+DROP POLICY IF EXISTS "pm_owner_select"                        ON public.plan_members;
+DROP POLICY IF EXISTS "pm_member_select"                       ON public.plan_members;
+DROP POLICY IF EXISTS "pm_owner_insert"                        ON public.plan_members;
+DROP POLICY IF EXISTS "pm_member_update"                       ON public.plan_members;
+DROP POLICY IF EXISTS "pm_owner_delete"                        ON public.plan_members;
+
+-- The person who invited can see all rows they created
+CREATE POLICY "pm_owner_select"
+  ON public.plan_members FOR SELECT
+  USING (invited_by = auth.uid());
+
+-- The invited person can see their own invitation (by member_id or by email)
+CREATE POLICY "pm_member_select"
+  ON public.plan_members FOR SELECT
+  USING (
+    member_id = auth.uid()
+    OR member_email = (SELECT email FROM auth.users WHERE id = auth.uid())
+  );
+
+-- Only the plan owner (invited_by) can INSERT (invite someone)
+CREATE POLICY "pm_owner_insert"
+  ON public.plan_members FOR INSERT
+  WITH CHECK (invited_by = auth.uid());
+
+-- The invited member can accept/reject (UPDATE status field)
+-- The owner can also update (e.g., change role)
+CREATE POLICY "pm_member_update"
+  ON public.plan_members FOR UPDATE
+  USING (
+    member_id = auth.uid()
+    OR member_email = (SELECT email FROM auth.users WHERE id = auth.uid())
+    OR invited_by = auth.uid()
+  );
+
+-- Only the owner can remove a collaborator
+CREATE POLICY "pm_owner_delete"
+  ON public.plan_members FOR DELETE
+  USING (invited_by = auth.uid());
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 5. Ensure Ahorro (Savings) Tables and Policies are created
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Plan savings records (Alcancía para planes compartidos)

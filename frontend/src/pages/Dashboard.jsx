@@ -127,7 +127,7 @@ const Dashboard = () => {
                     member_email: email,
                     member_id: memberId || null,
                     role: 'editor',
-                    status: 'pending',
+                    status: 'accepted',
                 });
                 if (insertErr) console.error('[savePlanned] Error inserting plan_member:', insertErr, { email, memberId });
             }
@@ -186,7 +186,7 @@ const Dashboard = () => {
             member_email: normalizedEmail,
             member_id: userId,
             role: 'editor',
-            status: 'pending',
+            status: 'accepted',
         });
         if (error) {
             console.error('[handleAddCollaborator] Insert error:', error);
