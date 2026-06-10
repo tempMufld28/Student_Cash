@@ -7,7 +7,7 @@ Aplicación web de gestión financiera diseñada para estudiantes de nivel medio
 
 ---
 
-## funcionalidades
+## Funcionalidades
 
 | Módulo | Descripción |
 |---|---|
@@ -58,10 +58,5 @@ Aplicación web de gestión financiera diseñada para estudiantes de nivel medio
 - **Materia:** Desarrollo Web
 - **Profesor:** Alberto Peña Mendoza
 - **Grupo:** 6IV10
-- **Ciclo:** 2025-2026
-
+- **Ciclo:** 
 ---
-
-##  Licencia
-
-Proyecto académico — uso educativo.
