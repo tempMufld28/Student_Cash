@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration 005: Personal Savings Goals & Records
+-- Migration 005: Personal Savings Goals & Records (Idempotent version)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.personal_savings_goals (
@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.personal_savings_goals (
 
 CREATE INDEX IF NOT EXISTS idx_personal_savings_user ON public.personal_savings_goals(user_id);
 ALTER TABLE public.personal_savings_goals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "personal_savings: user owns" ON public.personal_savings_goals;
 CREATE POLICY "personal_savings: user owns"
   ON public.personal_savings_goals FOR ALL
   USING (user_id = auth.uid());
@@ -30,6 +32,8 @@ CREATE TABLE IF NOT EXISTS public.personal_savings_records (
 
 CREATE INDEX IF NOT EXISTS idx_personal_records_goal ON public.personal_savings_records(goal_id);
 ALTER TABLE public.personal_savings_records ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "personal_savings_records: user owns" ON public.personal_savings_records;
 CREATE POLICY "personal_savings_records: user owns"
   ON public.personal_savings_records FOR ALL
   USING (user_id = auth.uid());

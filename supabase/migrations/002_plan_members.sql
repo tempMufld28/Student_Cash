@@ -1,8 +1,8 @@
--- Feature 4: Plan sharing via plan_members table
+-- Feature 4: Plan sharing via plan_members table (Idempotent version)
 -- Run this migration in Supabase SQL Editor
 
 -- 1. Nueva tabla plan_members
-CREATE TABLE public.plan_members (
+CREATE TABLE IF NOT EXISTS public.plan_members (
   id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   plan_id      bigint NOT NULL REFERENCES public.planned_expenses(id) ON DELETE CASCADE,
   invited_by   uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -16,18 +16,20 @@ CREATE TABLE public.plan_members (
 );
 
 -- Índices
-CREATE INDEX idx_plan_members_plan_id      ON public.plan_members(plan_id);
-CREATE INDEX idx_plan_members_member_id    ON public.plan_members(member_id);
-CREATE INDEX idx_plan_members_member_email ON public.plan_members(member_email);
+CREATE INDEX IF NOT EXISTS idx_plan_members_plan_id      ON public.plan_members(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_members_member_id    ON public.plan_members(member_id);
+CREATE INDEX IF NOT EXISTS idx_plan_members_member_email ON public.plan_members(member_email);
 
 -- RLS
 ALTER TABLE public.plan_members ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "plan_members: owner manage" ON public.plan_members;
 CREATE POLICY "plan_members: owner manage"
   ON public.plan_members
   FOR ALL
   USING (invited_by = auth.uid());
 
+DROP POLICY IF EXISTS "plan_members: member read" ON public.plan_members;
 CREATE POLICY "plan_members: member read"
   ON public.plan_members
   FOR SELECT
@@ -35,6 +37,7 @@ CREATE POLICY "plan_members: member read"
 
 -- 2. Modificar RLS de planned_expenses para SELECT
 DROP POLICY IF EXISTS "own planned select" ON public.planned_expenses;
+DROP POLICY IF EXISTS "planned_expenses: owner or member select" ON public.planned_expenses;
 
 CREATE POLICY "planned_expenses: owner or member select"
   ON public.planned_expenses
@@ -51,6 +54,7 @@ CREATE POLICY "planned_expenses: owner or member select"
 
 -- 3. Modificar RLS de planned_expenses para UPDATE
 DROP POLICY IF EXISTS "own planned update" ON public.planned_expenses;
+DROP POLICY IF EXISTS "planned_expenses: owner or editor update" ON public.planned_expenses;
 
 CREATE POLICY "planned_expenses: owner or editor update"
   ON public.planned_expenses

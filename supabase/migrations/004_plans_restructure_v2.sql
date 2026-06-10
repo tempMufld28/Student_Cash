@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration 004: Plans restructure v2
+-- Migration 004: Plans restructure v2 (Idempotent version)
 --   1. Add collaboration_mode to planned_expenses
 --   2. Add plan_savings_records table (Alcancía)
 --   3. Allow 'rejected' in plan_members.status
@@ -9,7 +9,12 @@
 
 -- 1. Add collaboration_mode column to planned_expenses
 ALTER TABLE public.planned_expenses
-  ADD COLUMN IF NOT EXISTS collaboration_mode text NOT NULL DEFAULT 'percent'
+  ADD COLUMN IF NOT EXISTS collaboration_mode text NOT NULL DEFAULT 'percent';
+
+-- Ensure the check constraint is set up safely
+ALTER TABLE public.planned_expenses DROP CONSTRAINT IF EXISTS planned_expenses_collaboration_mode_check;
+ALTER TABLE public.planned_expenses
+  ADD CONSTRAINT planned_expenses_collaboration_mode_check
     CHECK (collaboration_mode IN ('percent', 'module'));
 
 -- 2. Allow 'rejected' in plan_members.status (drop and recreate the constraint)
@@ -22,6 +27,7 @@ ALTER TABLE public.plan_members
 
 -- 3. Add policy so invited member can update their own invitation (accept/reject)
 DROP POLICY IF EXISTS "plan_members: member read" ON public.plan_members;
+DROP POLICY IF EXISTS "plan_members: member read and respond" ON public.plan_members;
 
 CREATE POLICY "plan_members: member read and respond"
   ON public.plan_members
@@ -44,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_plan_savings_member_id ON public.plan_savings_rec
 ALTER TABLE public.plan_savings_records ENABLE ROW LEVEL SECURITY;
 
 -- Miembros aceptados pueden ver todos los registros del plan
+DROP POLICY IF EXISTS "plan_savings: members read" ON public.plan_savings_records;
 CREATE POLICY "plan_savings: members read"
   ON public.plan_savings_records FOR SELECT
   USING (
@@ -55,6 +62,7 @@ CREATE POLICY "plan_savings: members read"
   );
 
 -- Cada miembro solo puede insertar sus propios registros
+DROP POLICY IF EXISTS "plan_savings: member insert own" ON public.plan_savings_records;
 CREATE POLICY "plan_savings: member insert own"
   ON public.plan_savings_records FOR INSERT
   WITH CHECK (member_id = auth.uid());

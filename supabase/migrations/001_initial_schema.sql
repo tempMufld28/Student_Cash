@@ -1,8 +1,8 @@
--- Student-Cash: initial schema
+-- Student-Cash: initial schema (Idempotent version)
 -- Supabase Auth handles users; we only store profile data + domain tables.
 
 -- Profiles (one per auth.users row, created via trigger)
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
   id         uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   name       text NOT NULL DEFAULT '',
   gender     text,
@@ -11,7 +11,7 @@ CREATE TABLE public.profiles (
 );
 
 -- Transactions
-CREATE TABLE public.transactions (
+CREATE TABLE IF NOT EXISTS public.transactions (
   id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   type        text NOT NULL CHECK (type IN ('Gasto', 'Ingreso')),
@@ -23,7 +23,7 @@ CREATE TABLE public.transactions (
 );
 
 -- Planned expenses
-CREATE TABLE public.planned_expenses (
+CREATE TABLE IF NOT EXISTS public.planned_expenses (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id       uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   description   text NOT NULL,
@@ -37,8 +37,8 @@ CREATE TABLE public.planned_expenses (
 );
 
 -- Indexes
-CREATE INDEX idx_transactions_user_date  ON public.transactions(user_id, date DESC);
-CREATE INDEX idx_planned_expenses_user   ON public.planned_expenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_date  ON public.transactions(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_planned_expenses_user   ON public.planned_expenses(user_id);
 
 -- Row Level Security
 ALTER TABLE public.profiles        ENABLE ROW LEVEL SECURITY;
@@ -46,19 +46,36 @@ ALTER TABLE public.transactions    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.planned_expenses ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
+DROP POLICY IF EXISTS "own profile select" ON public.profiles;
 CREATE POLICY "own profile select" ON public.profiles FOR SELECT USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "own profile insert" ON public.profiles;
 CREATE POLICY "own profile insert" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "own profile update" ON public.profiles;
 CREATE POLICY "own profile update" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 
 -- Transactions policies
+DROP POLICY IF EXISTS "own transactions select" ON public.transactions;
 CREATE POLICY "own transactions select" ON public.transactions FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "own transactions insert" ON public.transactions;
 CREATE POLICY "own transactions insert" ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "own transactions delete" ON public.transactions;
 CREATE POLICY "own transactions delete" ON public.transactions FOR DELETE USING (auth.uid() = user_id);
 
 -- Planned expenses policies
+DROP POLICY IF EXISTS "own planned select" ON public.planned_expenses;
 CREATE POLICY "own planned select" ON public.planned_expenses FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "own planned insert" ON public.planned_expenses;
 CREATE POLICY "own planned insert" ON public.planned_expenses FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "own planned update" ON public.planned_expenses;
 CREATE POLICY "own planned update" ON public.planned_expenses FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "own planned delete" ON public.planned_expenses;
 CREATE POLICY "own planned delete" ON public.planned_expenses FOR DELETE USING (auth.uid() = user_id);
 
 -- Trigger: create profile row when a new user signs up
@@ -71,6 +88,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
