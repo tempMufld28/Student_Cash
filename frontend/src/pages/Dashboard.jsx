@@ -81,7 +81,16 @@ const Dashboard = () => {
         else setTransactions(transRes.data);
 
         if (planRes.error) console.error('[fetchData] planned_expenses:', planRes.error);
-        else setPlannedExpenses(planRes.data);
+        else {
+            const visiblePlans = planRes.data.filter(p =>
+                p.user_id === user?.id ||
+                (p.plan_members || []).some(m =>
+                    (m.member_id === user?.id || m.member_email?.toLowerCase() === user?.email?.toLowerCase()) &&
+                    m.status === 'accepted'
+                )
+            );
+            setPlannedExpenses(visiblePlans);
+        }
 
         if (invRes.error) console.error('[fetchData] plan_members (invitations):', invRes.error);
         else setInvitations(invRes.data);
@@ -127,7 +136,7 @@ const Dashboard = () => {
                     member_email: email,
                     member_id: memberId || null,
                     role: 'editor',
-                    status: 'accepted',
+                    status: 'pending',
                 });
                 if (insertErr) console.error('[savePlanned] Error inserting plan_member:', insertErr, { email, memberId });
             }
@@ -186,7 +195,7 @@ const Dashboard = () => {
             member_email: normalizedEmail,
             member_id: userId,
             role: 'editor',
-            status: 'accepted',
+            status: 'pending',
         });
         if (error) {
             console.error('[handleAddCollaborator] Insert error:', error);
