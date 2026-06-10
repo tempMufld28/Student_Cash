@@ -10,6 +10,11 @@ DROP POLICY IF EXISTS "plan_members: owner manage"            ON public.plan_mem
 DROP POLICY IF EXISTS "plan_members: member read"             ON public.plan_members;
 DROP POLICY IF EXISTS "plan_members: member read and respond" ON public.plan_members;
 DROP POLICY IF EXISTS "plan_members: owner insert"            ON public.plan_members;
+DROP POLICY IF EXISTS "pm_owner_select"                        ON public.plan_members;
+DROP POLICY IF EXISTS "pm_member_select"                       ON public.plan_members;
+DROP POLICY IF EXISTS "pm_owner_insert"                        ON public.plan_members;
+DROP POLICY IF EXISTS "pm_member_update"                       ON public.plan_members;
+DROP POLICY IF EXISTS "pm_owner_delete"                        ON public.plan_members;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2. Recreate clean, explicit RLS policies for plan_members
