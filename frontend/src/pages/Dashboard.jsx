@@ -639,6 +639,7 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
     const [desc, setDesc] = useState('');
     const [collabMode, setCollabMode] = useState('percent');
     const [modules, setModules] = useState([]);
+    const [flatAmount, setFlatAmount] = useState('');
     const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [deadlineDate, setDeadlineDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [eventDate, setEventDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -649,6 +650,10 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
     // Per-collaborator suggestion state: { [collabId]: { suggestions: [], show: boolean } }
     const [collabSuggestions, setCollabSuggestions] = useState({});
     const searchTimeouts = React.useRef({});
+
+    const numericModules = modules
+        .map(m => ({ ...m, amount: parseAmount(m.amount), multiplier: parseAmount(m.multiplier || 1) }))
+        .filter(m => m.label && m.amount > 0 && m.multiplier > 0);
 
     const openPlan = (plan) => { setSelectedPlan(plan); setIsViewing(true); };
     const closePlan = () => { setIsViewing(false); setSelectedPlan(null); };
@@ -704,13 +709,23 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        const numericModules = modules
-            .map(m => ({ ...m, amount: parseAmount(m.amount), multiplier: parseAmount(m.multiplier || 1) }))
-            .filter(m => m.label && m.amount > 0 && m.multiplier > 0);
 
-        if (!desc || numericModules.length === 0 || !date) return;
+        const total = modules.length > 0
+            ? numericModules.reduce((acc, curr) => acc + curr.amount * curr.multiplier, 0)
+            : parseAmount(flatAmount);
 
-        const total = numericModules.reduce((acc, curr) => acc + curr.amount * curr.multiplier, 0);
+        if (!desc.trim()) {
+            alert("Por favor, ingresa una descripción principal.");
+            return;
+        }
+        if (total <= 0) {
+            alert("Por favor, ingresa un monto mayor a 0 o añade módulos de gasto con sus respectivos montos.");
+            return;
+        }
+        if (!date) {
+            alert("Por favor, selecciona una fecha.");
+            return;
+        }
 
         const cleanCollaborators = collaborators
             .filter(c => c.email)
@@ -725,12 +740,17 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
             amount: total,
             collaboration_mode: collabMode,
             date,
-            modules: numericModules,
+            modules: modules.length > 0 ? numericModules : [],
             deadline_date: deadlineDate,
             event_date: eventDate,
             collaborators: cleanCollaborators
         });
-        setDesc(''); setModules([]); setCollaborators([]); setIsAdding(false); setCollabMode('percent');
+        setDesc('');
+        setFlatAmount('');
+        setModules([]);
+        setCollaborators([]);
+        setIsAdding(false);
+        setCollabMode('percent');
     };
 
     const total = plannedExpenses.reduce((acc, curr) => acc + parseAmount(curr.amount), 0);
@@ -762,6 +782,23 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
                         <input type="text" value={desc} onChange={e => setDesc(e.target.value)} required className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
                     </div>
                     <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-finance-text mb-1">
+                            {modules.length > 0 ? 'Monto total (calculado)' : 'Monto total del plan ($)'}
+                        </label>
+                        <input
+                            type="text"
+                            value={
+                                modules.length > 0
+                                    ? `$${numericModules.reduce((acc, curr) => acc + curr.amount * curr.multiplier, 0).toFixed(2)}`
+                                    : flatAmount
+                            }
+                            onChange={e => modules.length === 0 && setFlatAmount(formatInputAmount(e.target.value))}
+                            disabled={modules.length > 0}
+                            placeholder="0.00"
+                            className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40 disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
+                    </div>
+                    <div className="sm:col-span-4">
                         <label className="block text-xs font-medium text-finance-text mb-1">Modo de colaboración</label>
                         <select value={collabMode} onChange={e => setCollabMode(e.target.value)} className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
                             <option value="percent">Porcentual</option>
