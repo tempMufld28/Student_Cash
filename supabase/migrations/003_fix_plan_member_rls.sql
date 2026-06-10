@@ -3,7 +3,6 @@
 -- correctly for the collaborator. A SECURITY DEFINER function bypasses that.
 
 -- 1. Helper function: checks membership bypassing plan_members RLS
-DROP FUNCTION IF EXISTS public.is_plan_member(p_plan_id bigint);
 CREATE OR REPLACE FUNCTION public.is_plan_member(p_plan_id bigint)
 RETURNS boolean
 LANGUAGE sql
