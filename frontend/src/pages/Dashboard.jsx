@@ -957,6 +957,7 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
 };
 
 const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollaborator, onRemoveCollaborator }) => {
+    const { user } = useAuth();
     const [tab, setTab] = useState('graficas');
     const [collabEmail, setCollabEmail] = useState('');
     const [collabError, setCollabError] = useState('');
@@ -972,7 +973,10 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
 
     const isMember =
         plan.user_id === currentUserId ||
-        (plan.plan_members || []).some(m => m.member_id === currentUserId && m.status === 'accepted');
+        (plan.plan_members || []).some(m =>
+            (m.member_id === currentUserId || m.member_email?.toLowerCase() === user?.email?.toLowerCase()) &&
+            m.status === 'accepted'
+        );
     const isOwner = plan.user_id === currentUserId;
 
     useEffect(() => {
@@ -1245,10 +1249,14 @@ const PlannedExpenseModal = ({ plan, currentUserId, onClose, onSave, onAddCollab
 export default Dashboard;
 
 const AddToPlanModal = ({ transaction, plans, currentUserId, onConfirm, onClose }) => {
+    const { user } = useAuth();
     const [selectedPlanId, setSelectedPlanId] = useState('');
     const eligiblePlans = plans.filter(p =>
         p.user_id === currentUserId ||
-        (p.plan_members || []).some(m => m.member_id === currentUserId && m.status === 'accepted')
+        (p.plan_members || []).some(m =>
+            (m.member_id === currentUserId || m.member_email?.toLowerCase() === user?.email?.toLowerCase()) &&
+            m.status === 'accepted'
+        )
     );
 
     return (
@@ -1348,6 +1356,7 @@ const InvitacionesTab = ({ invitations, onRefresh }) => {
 
 
 const AhorroTab = ({ currentUserId, plannedExpenses }) => {
+    const { user } = useAuth();
     const [subTab, setSubTab] = useState('personal');
     const [goals, setGoals] = useState([]);
     const [name, setName] = useState('');
@@ -1449,7 +1458,12 @@ const AhorroTab = ({ currentUserId, plannedExpenses }) => {
 
             {subTab === 'planes' && (
                 <div className="space-y-4">
-                    {plannedExpenses.filter(p => p.plan_members?.some(m => m.member_id === currentUserId && m.status === 'accepted') || p.user_id === currentUserId).map(p => (
+                    {plannedExpenses.filter(p =>
+                        p.plan_members?.some(m =>
+                            (m.member_id === currentUserId || m.member_email?.toLowerCase() === user?.email?.toLowerCase()) &&
+                            m.status === 'accepted'
+                        ) || p.user_id === currentUserId
+                    ).map(p => (
                         <div key={p.id} className="bg-finance-card p-4 border border-finance-inputBorder rounded-xl">
                             <h3 className="font-bold text-finance-text mb-1">{p.description}</h3>
                             <p className="text-xs text-finance-text/70">Para ver y reportar aportes, abre el plan en Planificación y ve a la pestaña Alcancía.</p>
