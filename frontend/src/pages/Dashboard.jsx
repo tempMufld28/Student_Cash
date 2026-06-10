@@ -91,12 +91,33 @@ const Dashboard = () => {
     };
 
     const savePlanned = async (newPlan) => {
+        const { collaborators: collabList, ...planFields } = newPlan;
         const { data, error } = await supabase
             .from('planned_expenses')
-            .insert({ ...newPlan, user_id: user.id })
+            .insert({ ...planFields, user_id: user.id })
             .select('*, plan_members(*)')
             .single();
-        if (!error) setPlannedExpenses(prev => [...prev, data]);
+        if (error) return;
+
+        // Insert plan_members rows for each collaborator
+        if (collabList && collabList.length > 0 && data?.id) {
+            for (const collab of collabList) {
+                if (!collab.email) continue;
+                const { data: memberId } = await supabase.rpc('get_user_id_by_email', { lookup_email: collab.email });
+                if (memberId) {
+                    await supabase.from('plan_members').insert({
+                        plan_id: data.id,
+                        invited_by: user.id,
+                        member_email: collab.email,
+                        member_id: memberId,
+                        role: 'editor',
+                        status: 'pending',
+                    });
+                }
+            }
+        }
+        // Re-fetch to get the plan with its members
+        fetchData();
     };
 
     const deleteTransaction = async (id) => {
@@ -578,8 +599,6 @@ const ResumenTab = ({ transactions, plannedExpenses, onAddTransaction, onDeleteT
 const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDeletePlanned, onUpdatePlanned, onAddCollaborator, onRemoveCollaborator, deleteMode }) => {
     const [desc, setDesc] = useState('');
     const [collabMode, setCollabMode] = useState('percent');
-    const [collabEmailInput, setCollabEmailInput] = useState('');
-    const [suggestions, setSuggestions] = useState([]);
     const [modules, setModules] = useState([]);
     const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [deadlineDate, setDeadlineDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -588,6 +607,9 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
     const [isAdding, setIsAdding] = useState(false);
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [isViewing, setIsViewing] = useState(false);
+    // Per-collaborator suggestion state: { [collabId]: { suggestions: [], show: boolean } }
+    const [collabSuggestions, setCollabSuggestions] = useState({});
+    const searchTimeouts = React.useRef({});
 
     const openPlan = (plan) => { setSelectedPlan(plan); setIsViewing(true); };
     const closePlan = () => { setIsViewing(false); setSelectedPlan(null); };
@@ -608,15 +630,37 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
         setCollaborators(prev => [...prev, { id: Date.now(), email: '', percent: '', moduleId: '' }]);
     };
 
-    const handleCollaboratorChange = (id, field, value) => {
-        setCollaborators(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
+    const handleCollaboratorChange = (collabId, field, value) => {
+        setCollaborators(prev => prev.map(c => c.id === collabId ? { ...c, [field]: value } : c));
+        // Trigger autocomplete search when email field changes
+        if (field === 'email') {
+            clearTimeout(searchTimeouts.current[collabId]);
+            if (!value || value.length < 2) {
+                setCollabSuggestions(prev => ({ ...prev, [collabId]: { suggestions: [], show: false } }));
+                return;
+            }
+            searchTimeouts.current[collabId] = setTimeout(async () => {
+                const { data } = await supabase.rpc('search_users_by_email', { query: value });
+                if (data && data.length > 0) {
+                    setCollabSuggestions(prev => ({
+                        ...prev,
+                        [collabId]: { suggestions: data.map(r => ({ email: r.email, name: r.name || '' })), show: true }
+                    }));
+                } else {
+                    setCollabSuggestions(prev => ({ ...prev, [collabId]: { suggestions: [], show: false } }));
+                }
+            }, 300);
+        }
     };
 
-    const handleRemoveCollaborator = (id) => setCollaborators(prev => prev.filter(c => c.id !== id));
+    const selectCollabSuggestion = (collabId, suggestion) => {
+        setCollaborators(prev => prev.map(c => c.id === collabId ? { ...c, email: suggestion.email } : c));
+        setCollabSuggestions(prev => ({ ...prev, [collabId]: { suggestions: [], show: false } }));
+    };
 
-    const handleEmailInput = (value) => {
-        setCollabEmailInput(value);
-        // We simulate debounce by just checking length here. Real autocomplete logic would be async.
+    const handleRemoveCollaborator = (id) => {
+        setCollaborators(prev => prev.filter(c => c.id !== id));
+        setCollabSuggestions(prev => { const copy = { ...prev }; delete copy[id]; return copy; });
     };
 
     const handleSubmit = (e) => {
@@ -719,8 +763,34 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
                         {collaborators.length > 0 && (
                             <div className="space-y-2">
                                 {collaborators.map(c => (
-                                    <div key={c.id} className="grid grid-cols-7 gap-2 items-center">
-                                        <input type="email" value={c.email} onChange={e => handleCollaboratorChange(c.id, 'email', e.target.value)} placeholder="Email" className="col-span-4 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40" />
+                                    <div key={c.id} className="grid grid-cols-7 gap-2 items-center relative">
+                                        <div className="col-span-4 relative">
+                                            <input
+                                                type="email"
+                                                value={c.email}
+                                                onChange={e => handleCollaboratorChange(c.id, 'email', e.target.value)}
+                                                onBlur={() => setTimeout(() => setCollabSuggestions(prev => ({ ...prev, [c.id]: { ...prev[c.id], show: false } })), 150)}
+                                                onFocus={() => collabSuggestions[c.id]?.suggestions?.length > 0 && setCollabSuggestions(prev => ({ ...prev, [c.id]: { ...prev[c.id], show: true } }))}
+                                                placeholder="Buscar por correo..."
+                                                className="w-full bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text placeholder:text-finance-text/40"
+                                            />
+                                            {collabSuggestions[c.id]?.show && collabSuggestions[c.id]?.suggestions?.length > 0 && (
+                                                <ul className="absolute z-20 left-0 right-0 mt-1 bg-finance-card border border-finance-inputBorder rounded-xl shadow-lg overflow-hidden">
+                                                    {collabSuggestions[c.id].suggestions.map(s => (
+                                                        <li
+                                                            key={s.email}
+                                                            onMouseDown={() => selectCollabSuggestion(c.id, s)}
+                                                            className="px-3 py-2 cursor-pointer hover:bg-finance-primary hover:text-white transition-colors group"
+                                                        >
+                                                            {s.name && (
+                                                                <p className="text-xs font-semibold text-finance-text group-hover:text-white leading-tight">{s.name}</p>
+                                                            )}
+                                                            <p className="text-[11px] text-finance-text/60 group-hover:text-white/80">{s.email}</p>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
                                         {collabMode === 'module' ? (
                                             <select value={c.moduleId} onChange={e => handleCollaboratorChange(c.id, 'moduleId', e.target.value)} className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-finance-text">
                                                 <option value="">Módulo</option>
@@ -729,7 +799,7 @@ const PlanificacionTab = ({ plannedExpenses, currentUserId, onAddPlanned, onDele
                                         ) : (
                                             <input type="number" min="1" value={c.percent} onChange={e => handleCollaboratorChange(c.id, 'percent', e.target.value)} placeholder="%" className="col-span-1 bg-finance-card border border-finance-inputBorder rounded-lg p-2 text-xs focus:ring-2 focus:ring-finance-primary/40 outline-none text-right text-finance-text" />
                                         )}
-                                        <button type="button" onClick={() => handleRemoveCollaborator(c.id)} className="text-[11px] text-red-500 hover:text-red-600 font-semibold">Quitar</button>
+                                        <button type="button" onClick={() => handleRemoveCollaborator(c.id)} className="col-span-1 text-[11px] text-red-500 hover:text-red-600 font-semibold">Quitar</button>
                                     </div>
                                 ))}
                             </div>

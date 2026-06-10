@@ -25,3 +25,7 @@ Thumbs.db
 
 # Firebase (migrated to Vercel)
 .firebase/
+
+# Supabase
+supabase/
+
