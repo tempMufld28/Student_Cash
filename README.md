@@ -7,12 +7,6 @@ Aplicación web de gestión financiera diseñada para estudiantes de nivel medio
 
 ---
 
-## app
-
-> _Agrega aquí el link de Vercel cuando lo tengas_
-
----
-
 ## funcionalidades
 
 | Módulo | Descripción |
