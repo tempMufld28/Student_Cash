@@ -1,5 +1,5 @@
 # Student-Cash
-**Controla tus finan4zas de manera simple.**
+**Controla tus finanzas de manera simple.**
 
 Aplicación web de gestión financiera diseñada para estudiantes de nivel medio superior. Permite registrar gastos e ingresos, visualizar distribución del dinero en gráficas en tiempo real, planificar gastos futuros y crear metas de ahorro personales.
 
