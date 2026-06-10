@@ -73,12 +73,18 @@ const Dashboard = () => {
         const [transRes, planRes, invRes] = await Promise.all([
             supabase.from('transactions').select('*').order('date', { ascending: false }),
             supabase.from('planned_expenses').select('*, plan_members(*)').order('date', { ascending: true }),
-            supabase.from('plan_members').select('*, planned_expenses(*)').eq('member_email', user?.email).eq('status', 'pending'),
+            // Fetch pending invitations by member_id (primary) — RLS ensures only own rows are visible
+            supabase.from('plan_members').select('*, planned_expenses(*)').eq('status', 'pending'),
         ]);
 
-        if (!transRes.error) setTransactions(transRes.data);
-        if (!planRes.error) setPlannedExpenses(planRes.data);
-        if (!invRes.error) setInvitations(invRes.data);
+        if (transRes.error) console.error('[fetchData] transactions:', transRes.error);
+        else setTransactions(transRes.data);
+
+        if (planRes.error) console.error('[fetchData] planned_expenses:', planRes.error);
+        else setPlannedExpenses(planRes.data);
+
+        if (invRes.error) console.error('[fetchData] plan_members (invitations):', invRes.error);
+        else setInvitations(invRes.data);
     };
 
     const saveTransaction = async (newTx) => {
@@ -97,23 +103,33 @@ const Dashboard = () => {
             .insert({ ...planFields, user_id: user.id })
             .select('*, plan_members(*)')
             .single();
-        if (error) return;
+        if (error) {
+            console.error('[savePlanned] Error inserting plan:', error);
+            alert('Error al guardar el plan: ' + (error.message || error.code));
+            return;
+        }
 
         // Insert plan_members rows for each collaborator
         if (collabList && collabList.length > 0 && data?.id) {
             for (const collab of collabList) {
-                if (!collab.email) continue;
-                const { data: memberId } = await supabase.rpc('get_user_id_by_email', { lookup_email: collab.email });
-                if (memberId) {
-                    await supabase.from('plan_members').insert({
-                        plan_id: data.id,
-                        invited_by: user.id,
-                        member_email: collab.email,
-                        member_id: memberId,
-                        role: 'editor',
-                        status: 'pending',
-                    });
-                }
+                const email = collab.email?.trim().toLowerCase();
+                if (!email) continue;
+
+                // Try to find the user ID; if not found, still insert with member_id null
+                const { data: memberId, error: rpcErr } = await supabase.rpc(
+                    'get_user_id_by_email', { lookup_email: email }
+                );
+                if (rpcErr) console.error('[savePlanned] RPC error:', rpcErr);
+
+                const { error: insertErr } = await supabase.from('plan_members').insert({
+                    plan_id: data.id,
+                    invited_by: user.id,
+                    member_email: email,
+                    member_id: memberId || null,
+                    role: 'editor',
+                    status: 'pending',
+                });
+                if (insertErr) console.error('[savePlanned] Error inserting plan_member:', insertErr, { email, memberId });
             }
         }
         // Re-fetch to get the plan with its members
@@ -143,18 +159,41 @@ const Dashboard = () => {
     };
 
     const handleAddCollaborator = async (planId, email) => {
-        const { data: userId, error: rpcErr } = await supabase.rpc('get_user_id_by_email', { lookup_email: email });
-        if (rpcErr || !userId) return { error: 'El correo no está registrado en Student-Cash' };
+        const normalizedEmail = email?.trim().toLowerCase();
+        if (!normalizedEmail) return { error: 'El correo no puede estar vacío' };
+
+        // Look up user ID — if not found still proceed (insert with member_id null)
+        const { data: userId, error: rpcErr } = await supabase.rpc(
+            'get_user_id_by_email', { lookup_email: normalizedEmail }
+        );
+        if (rpcErr) console.error('[handleAddCollaborator] RPC error:', rpcErr);
+
+        // Require the user to exist (only registered users per user requirement)
+        if (!userId) return { error: 'El correo no está registrado en Student-Cash' };
+
+        // Check for duplicate
+        const { data: existing } = await supabase
+            .from('plan_members')
+            .select('id')
+            .eq('plan_id', planId)
+            .eq('member_email', normalizedEmail)
+            .maybeSingle();
+        if (existing) return { error: 'Este colaborador ya fue invitado a este plan' };
+
         const { error } = await supabase.from('plan_members').insert({
             plan_id: planId,
             invited_by: user.id,
-            member_email: email,
+            member_email: normalizedEmail,
             member_id: userId,
             role: 'editor',
             status: 'pending',
         });
-        if (!error) fetchData();
-        return { error: error?.message || null };
+        if (error) {
+            console.error('[handleAddCollaborator] Insert error:', error);
+            return { error: error.message || 'Error al agregar colaborador' };
+        }
+        fetchData();
+        return { error: null };
     };
 
     const handleRemoveCollaborator = async (memberId) => {
@@ -1218,13 +1257,32 @@ const AddToPlanModal = ({ transaction, plans, currentUserId, onConfirm, onClose 
 
 
 const InvitacionesTab = ({ invitations, onRefresh }) => {
-    const handleAccept = async (id) => {
-        await supabase.from('plan_members').update({ status: 'accepted' }).eq('id', id);
+    const { user } = useAuth();
+
+    const handleAccept = async (inv) => {
+        // Update status and ensure member_id is set (may have been NULL if inserted before user registered)
+        const updates = { status: 'accepted' };
+        if (!inv.member_id && user?.id) {
+            updates.member_id = user.id;
+        }
+        const { error } = await supabase
+            .from('plan_members')
+            .update(updates)
+            .eq('id', inv.id);
+        if (error) {
+            console.error('[InvitacionesTab] Error accepting:', error);
+            alert('Error al aceptar la invitación: ' + error.message);
+            return;
+        }
         onRefresh();
     };
 
     const handleReject = async (id) => {
-        await supabase.from('plan_members').update({ status: 'rejected' }).eq('id', id);
+        const { error } = await supabase
+            .from('plan_members')
+            .update({ status: 'rejected' })
+            .eq('id', id);
+        if (error) console.error('[InvitacionesTab] Error rejecting:', error);
         onRefresh();
     };
 
@@ -1240,7 +1298,7 @@ const InvitacionesTab = ({ invitations, onRefresh }) => {
                             <p className="font-bold text-finance-text mb-1">{inv.planned_expenses?.description}</p>
                             <p className="text-xs text-finance-text/70 mb-4">Total: ${Number(inv.planned_expenses?.amount || 0).toFixed(2)}</p>
                             <div className="flex gap-2">
-                                <button onClick={() => handleAccept(inv.id)} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg text-sm transition-colors">Aceptar</button>
+                                <button onClick={() => handleAccept(inv)} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg text-sm transition-colors">Aceptar</button>
                                 <button onClick={() => handleReject(inv.id)} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-lg text-sm transition-colors">Rechazar</button>
                             </div>
                         </div>
@@ -1250,6 +1308,7 @@ const InvitacionesTab = ({ invitations, onRefresh }) => {
         </div>
     );
 };
+
 
 const AhorroTab = ({ currentUserId, plannedExpenses }) => {
     const [subTab, setSubTab] = useState('personal');
