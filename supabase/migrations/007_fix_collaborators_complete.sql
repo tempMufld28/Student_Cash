@@ -30,7 +30,7 @@ CREATE POLICY "pm_member_select"
   ON public.plan_members FOR SELECT
   USING (
     member_id = auth.uid()
-    OR member_email = (SELECT email FROM auth.users WHERE id = auth.uid())
+    OR member_email = (auth.jwt() ->> 'email')
   );
 
 -- Only the plan owner (invited_by) can INSERT (invite someone)
@@ -44,7 +44,7 @@ CREATE POLICY "pm_member_update"
   ON public.plan_members FOR UPDATE
   USING (
     member_id = auth.uid()
-    OR member_email = (SELECT email FROM auth.users WHERE id = auth.uid())
+    OR member_email = (auth.jwt() ->> 'email')
     OR invited_by = auth.uid()
   );
 
